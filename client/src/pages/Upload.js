@@ -48,6 +48,7 @@ const Upload = () => {
   });
   const navigate = useNavigate();
   const [redirected, setRedirected] = useState(false);
+  const redirectedRef = useRef(false);
 
   const onDrop = useCallback((acceptedFiles) => {
     const newFiles = acceptedFiles.map(file => ({
@@ -138,6 +139,10 @@ const Upload = () => {
         },
       });
 
+      console.log('✅ Upload successful, response:', response.data);
+      console.log('✅ Transcript ID:', response.data.transcriptId);
+      console.log('✅ Redirected state:', redirected);
+      
       setFiles(prev =>
         prev.map(f =>
           f.id === fileData.id
@@ -146,9 +151,13 @@ const Upload = () => {
         )
       );
       // Redirect to transcript page after first successful upload
-      if (response.data.transcriptId && !redirected) {
+      if (response.data.transcriptId && !redirectedRef.current) {
+        console.log('🔄 Redirecting to transcript page:', `/transcripts/${response.data.transcriptId}`);
         setRedirected(true);
+        redirectedRef.current = true;
         navigate(`/transcripts/${response.data.transcriptId}`);
+      } else {
+        console.log('❌ Not redirecting - transcriptId:', response.data.transcriptId, 'redirected:', redirectedRef.current);
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -237,6 +246,14 @@ const Upload = () => {
     }
     return <AudioFile />;
   };
+
+  // Reset redirect state when component unmounts
+  useEffect(() => {
+    return () => {
+      redirectedRef.current = false;
+      setRedirected(false);
+    };
+  }, []);
 
   const requiredFieldsFilled = formData.hcpName && formData.hcpSpecialty && formData.meetingDate;
 

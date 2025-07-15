@@ -509,8 +509,12 @@ async function processAIAnalysis(transcriptId) {
       sentimentAnalysis: {
         overall: sentimentResult.overall,
         score: sentimentResult.score,
+        confidence: sentimentResult.confidence,
         details: sentimentResult.details,
-        explanations: sentimentResult.explanations // <-- add explanations
+        explanations: sentimentResult.explanations,
+        emotionalIndicators: sentimentResult.emotionalIndicators,
+        sentimentTrends: sentimentResult.sentimentTrends,
+        contextFactors: sentimentResult.contextFactors
       },
       keyInsights: insightsResult.keyInsights || [],
       actionItems: insightsResult.actionItems || []

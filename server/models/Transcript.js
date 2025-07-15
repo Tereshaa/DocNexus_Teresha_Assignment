@@ -81,10 +81,37 @@ const transcriptSchema = new mongoose.Schema({
       max: 1,
       default: 0
     },
+    confidence: {
+      type: Number,
+      min: 0,
+      max: 1,
+      default: 0
+    },
     details: {
       positive: Number,
       negative: Number,
       neutral: Number
+    },
+    explanations: {
+      positive: String,
+      negative: String,
+      neutral: String
+    },
+    emotionalIndicators: [{
+      indicator: String,
+      type: String,
+      context: String
+    }],
+    sentimentTrends: [{
+      segment: String,
+      sentiment: String,
+      reason: String
+    }],
+    contextFactors: {
+      medicalConcerns: [String],
+      businessOpportunities: [String],
+      personalRapport: String,
+      professionalTone: String
     }
   },
   keyInsights: [{
