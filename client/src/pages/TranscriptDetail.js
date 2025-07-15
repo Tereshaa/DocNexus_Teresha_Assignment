@@ -622,9 +622,8 @@ const TranscriptDetail = () => {
                   />
                 </Box>
                 <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                  Confidence: {Math.round((transcript.sentimentAnalysis?.confidence || 0) * 100)}%
+                  Confidence: {typeof transcript.sentimentAnalysis?.confidence === 'number' && transcript.sentimentAnalysis.confidence > 0 ? `${Math.round(transcript.sentimentAnalysis.confidence * 100)}%` : 'N/A'}
                 </Typography>
-                
                 {/* Sentiment Details */}
                 {transcript.sentimentAnalysis?.details && (
                   <Box sx={{ mb: 2 }}>
@@ -650,51 +649,9 @@ const TranscriptDetail = () => {
                     </Box>
                   </Box>
                 )}
-                
-                {/* Sentiment Trends */}
-                {transcript.sentimentAnalysis?.sentimentTrends && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Sentiment Trends
-                    </Typography>
-                    {transcript.sentimentAnalysis.sentimentTrends.map((trend, index) => (
-                      <Box key={index} sx={{ mb: 1 }}>
-                        <Typography variant="body2" color="textSecondary">
-                          {trend.segment}: {trend.sentiment}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {trend.reason}
-                        </Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                )}
               </CardContent>
             </Card>
           </Grid>
-          
-          {/* Emotional Indicators */}
-          {transcript.sentimentAnalysis?.emotionalIndicators && (
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Emotional Indicators
-                  </Typography>
-                  {transcript.sentimentAnalysis.emotionalIndicators.map((indicator, index) => (
-                    <Box key={index} sx={{ mb: 1 }}>
-                      <Typography variant="body2" fontWeight="medium">
-                        {indicator.indicator}
-                      </Typography>
-                      <Typography variant="caption" color="textSecondary">
-                        {indicator.context}
-                      </Typography>
-                    </Box>
-                  ))}
-                </CardContent>
-              </Card>
-            </Grid>
-          )}
         </Grid>
       )}
 
