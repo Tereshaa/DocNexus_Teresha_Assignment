@@ -21,7 +21,7 @@ app.use(helmet());
 // CORS configuration
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://docnexus-frontend-teresha.onrender.com/api'] 
+    ? ['https://docnexus-frontend-teresha.onrender.com'] 
     : ['http://localhost:3000'],
   credentials: true
 }));
