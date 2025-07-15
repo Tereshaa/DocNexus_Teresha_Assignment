@@ -567,7 +567,7 @@ const TranscriptDetail = () => {
                       <ListItemIcon sx={{ mt: 0.5 }}>
                         <TrendingUp color="primary" />
                       </ListItemIcon>
-                      <ListItemText primary={insight.insight} primaryTypographyProps={{ fontSize: '1.2rem' }} />
+                      <ListItemText primary={insight.insight} />
                     </ListItem>
                   ))}
                 </List>
