@@ -45,15 +45,45 @@ const upload = multer({
   }
 });
 
+// Add error handling for multer
+const uploadMiddleware = (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      console.error('Multer error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          error: 'File too large. Maximum size is 100MB.'
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: `Upload error: ${err.message}`
+      });
+    } else if (err) {
+      console.error('File filter error:', err);
+      return res.status(400).json({
+        success: false,
+        error: err.message
+      });
+    }
+    next();
+  });
+};
+
 /**
  * POST /api/upload
  * Upload audio/video file and start processing
  */
-router.post('/', upload.single('file'), async (req, res) => {
+router.post('/', uploadMiddleware, async (req, res) => {
   try {
     console.log('📤 File upload request received');
+    console.log('📤 Request body:', req.body);
+    console.log('📤 Request file:', req.file);
+    console.log('📤 Request headers:', req.headers);
     
     if (!req.file) {
+      console.log('❌ No file in request');
       return res.status(400).json({
         success: false,
         error: 'No file uploaded'

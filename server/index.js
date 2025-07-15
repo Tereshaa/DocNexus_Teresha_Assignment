@@ -77,6 +77,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Test upload endpoint
+app.post('/api/test-upload', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Test upload endpoint working',
+    body: req.body,
+    headers: req.headers
+  });
+});
+
 // API routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/transcripts', transcriptRoutes);

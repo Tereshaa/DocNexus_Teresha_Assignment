@@ -152,10 +152,16 @@ const Upload = () => {
       }
     } catch (error) {
       console.error('Upload error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
       setFiles(prev =>
         prev.map(f =>
           f.id === fileData.id
-            ? { ...f, status: 'error', error: error.response?.data?.message || 'Upload failed' }
+            ? { ...f, status: 'error', error: error.response?.data?.message || error.message || 'Upload failed' }
             : f
         )
       );

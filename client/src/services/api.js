@@ -17,9 +17,21 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Debug logging for upload requests
+    if (config.url === '/upload') {
+      console.log('Upload request config:', {
+        url: config.baseURL + config.url,
+        method: config.method,
+        headers: config.headers,
+        dataType: config.data instanceof FormData ? 'FormData' : typeof config.data
+      });
+    }
+    
     return config;
   },
   (error) => {
+    console.error('Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -30,6 +42,15 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message
+    });
+    
     if (error.response?.status === 401) {
       // Handle unauthorized access
       localStorage.removeItem('authToken');
