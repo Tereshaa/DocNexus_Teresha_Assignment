@@ -47,7 +47,12 @@ class FileService {
       // Generate full URL for production
       let baseUrl;
       if (req) {
-        baseUrl = req.protocol + '://' + req.get('host');
+        let protocol = req.protocol;
+        let host = req.get('host');
+        if (host && host.includes('onrender.com')) {
+          protocol = 'https';
+        }
+        baseUrl = protocol + '://' + host;
       } else {
         baseUrl = process.env.NODE_ENV === 'production' 
           ? 'https://docnexus-backend-teresha.onrender.com'
@@ -96,7 +101,12 @@ class FileService {
       // Generate full URL for production
       let baseUrl;
       if (req) {
-        baseUrl = req.protocol + '://' + req.get('host');
+        let protocol = req.protocol;
+        let host = req.get('host');
+        if (host && host.includes('onrender.com')) {
+          protocol = 'https';
+        }
+        baseUrl = protocol + '://' + host;
       } else {
         baseUrl = process.env.NODE_ENV === 'production' 
           ? 'https://docnexus-backend-teresha.onrender.com'

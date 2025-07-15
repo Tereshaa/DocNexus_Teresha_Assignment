@@ -111,6 +111,23 @@ router.post('/', uploadMiddleware, async (req, res) => {
       }
     }
 
+    // Check for duplicate transcript
+    const existing = await Transcript.findOne({
+      originalFileName: req.file.originalname,
+      meetingDate: new Date(meetingDate),
+      hcpName: hcpName,
+      hcpSpecialty: hcpSpecialty
+    });
+    if (existing) {
+      return res.status(200).json({
+        success: true,
+        message: 'Transcript already exists',
+        transcriptId: existing._id,
+        fileUrl: existing.fileUrl,
+        status: existing.transcriptionStatus
+      });
+    }
+
     // Upload file to local storage
     console.log('📤 Uploading file to local storage...');
     const fileResult = await fileService.uploadFile(
