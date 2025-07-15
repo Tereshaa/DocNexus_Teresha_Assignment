@@ -43,9 +43,14 @@ class FileService {
       
       console.log(`✅ File uploaded successfully: ${targetPath}`);
       
+      // Generate full URL for production
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://docnexus-backend-teresha.onrender.com'
+        : 'http://localhost:5000';
+      
       return {
         success: true,
-        url: `/api/files/${folder}/${uniqueFileName}`,
+        url: `${baseUrl}/api/files/${folder}/${uniqueFileName}`,
         key: `${folder}/${uniqueFileName}`,
         localPath: targetPath,
         originalName: fileName,
@@ -81,9 +86,14 @@ class FileService {
       
       console.log(`✅ Buffer uploaded successfully: ${targetPath}`);
       
+      // Generate full URL for production
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://docnexus-backend-teresha.onrender.com'
+        : 'http://localhost:5000';
+      
       return {
         success: true,
-        url: `/api/files/${folder}/${uniqueFileName}`,
+        url: `${baseUrl}/api/files/${folder}/${uniqueFileName}`,
         key: `${folder}/${uniqueFileName}`,
         localPath: targetPath,
         originalName: fileName,
@@ -195,12 +205,17 @@ class FileService {
         .map(file => {
           const filePath = path.join(targetDir, file);
           const stats = fs.statSync(filePath);
+          // Generate full URL for production
+          const baseUrl = process.env.NODE_ENV === 'production' 
+            ? 'https://docnexus-backend-teresha.onrender.com'
+            : 'http://localhost:5000';
+          
           return {
             key: `${folder}/${file}`,
             name: file,
             size: stats.size,
             lastModified: stats.mtime,
-            url: `/api/files/${folder}/${file}`
+            url: `${baseUrl}/api/files/${folder}/${file}`
           };
         });
       
