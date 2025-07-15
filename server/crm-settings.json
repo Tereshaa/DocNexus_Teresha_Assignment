@@ -1,0 +1,10 @@
+{
+  "salesforce": {
+    "enabled": true,
+    "clientId": "3MVG9dAEux2v1sLvqna4ESe4dWzqu46GGmMTV_jxMKpctiu.GkyI5.9eVxzQDNIqmjE98_FK4k1LrbG3ashoD",
+    "clientSecret": "225E0BC10E21D5A977735801DE8CBC8E8978C43FB85E7C12F6D178CE3CD4C61E",
+    "username": "pes2202101007136@agentforce.com",
+    "password": "618211Jtjt!",
+    "instanceUrl": "https://login.salesforce.com"
+  }
+}
