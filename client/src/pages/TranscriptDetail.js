@@ -150,10 +150,32 @@ const TranscriptDetail = () => {
         // Start refresh interval if not already running
         if (!refreshInterval) {
           setProcessingStartTime(Date.now());
-          const interval = setInterval(() => {
+          const interval = setInterval(async () => {
             setProcessingTime(Math.floor((Date.now() - processingStartTime) / 1000));
-            // Simple page refresh without moving user position
-            window.location.reload();
+            // Fetch transcript status without page reload
+            try {
+              const response = await api.get(`/transcripts/${id}`);
+              const transcriptData = response.data.data;
+              setTranscript(transcriptData);
+              
+              // Update audio URL if available
+              if (transcriptData.fileUrl) {
+                setAudioUrl(transcriptData.fileUrl);
+              }
+              
+              // If transcript is completed, stop polling
+              if (transcriptData.transcriptionStatus === 'completed') {
+                clearInterval(interval);
+                setRefreshInterval(null);
+                setShowSuccessMessage(true);
+                setTimeout(() => setShowSuccessMessage(false), 5000);
+              }
+            } catch (error) {
+              console.error('Error polling transcript status:', error);
+              // Stop polling on error to avoid infinite retries
+              clearInterval(interval);
+              setRefreshInterval(null);
+            }
           }, 10000); // Refresh every 10 seconds
           setRefreshInterval(interval);
         }
