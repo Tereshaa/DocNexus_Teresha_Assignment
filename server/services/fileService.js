@@ -27,9 +27,10 @@ class FileService {
    * @param {string} filePath - Local file path
    * @param {string} fileName - Original file name
    * @param {string} folder - Storage folder path
+   * @param {object|null} req - Express request object (optional)
    * @returns {Promise<Object>} Upload result
    */
-  async uploadFile(filePath, fileName, folder = 'uploads') {
+  async uploadFile(filePath, fileName, folder = 'uploads', req = null) {
     try {
       console.log(`📤 Uploading file locally: ${fileName}`);
       
@@ -44,9 +45,14 @@ class FileService {
       console.log(`✅ File uploaded successfully: ${targetPath}`);
       
       // Generate full URL for production
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://docnexus-backend-teresha.onrender.com'
-        : 'http://localhost:5000';
+      let baseUrl;
+      if (req) {
+        baseUrl = req.protocol + '://' + req.get('host');
+      } else {
+        baseUrl = process.env.NODE_ENV === 'production' 
+          ? 'https://docnexus-backend-teresha.onrender.com'
+          : 'http://localhost:5000';
+      }
       
       return {
         success: true,
@@ -70,9 +76,10 @@ class FileService {
    * @param {Buffer} buffer - File buffer
    * @param {string} fileName - File name
    * @param {string} folder - Storage folder path
+   * @param {object|null} req - Express request object (optional)
    * @returns {Promise<Object>} Upload result
    */
-  async uploadBuffer(buffer, fileName, folder = 'documents') {
+  async uploadBuffer(buffer, fileName, folder = 'documents', req = null) {
     try {
       console.log(`📤 Uploading buffer locally: ${fileName}`);
       
@@ -87,9 +94,14 @@ class FileService {
       console.log(`✅ Buffer uploaded successfully: ${targetPath}`);
       
       // Generate full URL for production
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://docnexus-backend-teresha.onrender.com'
-        : 'http://localhost:5000';
+      let baseUrl;
+      if (req) {
+        baseUrl = req.protocol + '://' + req.get('host');
+      } else {
+        baseUrl = process.env.NODE_ENV === 'production' 
+          ? 'https://docnexus-backend-teresha.onrender.com'
+          : 'http://localhost:5000';
+      }
       
       return {
         success: true,

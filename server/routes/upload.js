@@ -116,7 +116,8 @@ router.post('/', uploadMiddleware, async (req, res) => {
     const fileResult = await fileService.uploadFile(
       req.file.path,
       req.file.originalname,
-      'uploads'
+      'uploads',
+      req // pass the request object
     );
 
     if (!fileResult.success) {
@@ -198,7 +199,8 @@ router.post('/batch', upload.array('files', 10), async (req, res) => {
         const fileResult = await fileService.uploadFile(
           file.path,
           file.originalname,
-          'uploads'
+          'uploads',
+          req // pass the request object
         );
 
         if (fileResult.success) {
