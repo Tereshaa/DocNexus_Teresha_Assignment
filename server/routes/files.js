@@ -49,6 +49,50 @@ router.get('/:folder/:filename', async (req, res) => {
 });
 
 /**
+ * GET /api/files/download/:folder/:filename
+ * Download files with proper download headers
+ */
+router.get('/download/:folder/:filename', async (req, res) => {
+  try {
+    const { folder, filename } = req.params;
+    
+    // Validate folder parameter
+    if (!['uploads', 'documents'].includes(folder)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid folder'
+      });
+    }
+    
+    const fileKey = `${folder}/${filename}`;
+    const fileResult = await fileService.getFile(fileKey);
+    
+    if (!fileResult.success) {
+      return res.status(404).json({
+        success: false,
+        error: 'File not found'
+      });
+    }
+    
+    // Set download headers
+    res.setHeader('Content-Type', fileResult.contentType);
+    res.setHeader('Content-Length', fileResult.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    
+    // Send the file buffer
+    res.send(fileResult.buffer);
+    
+  } catch (error) {
+    console.error('❌ File download failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/files/:folder
  * List files in a folder
  */
