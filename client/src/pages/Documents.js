@@ -118,11 +118,19 @@ const Documents = () => {
 
   const handleDownload = async (documentUrl, documentType, fileName) => {
     try {
-      // Construct the correct backend URL if it's a relative URL
+      // Construct the correct backend URL
       let fullUrl = documentUrl;
+      
+      // Handle relative URLs
       if (documentUrl.startsWith('/api/')) {
         fullUrl = `https://docnexus-backend-teresha.onrender.com${documentUrl}`;
       }
+      // Handle localhost URLs (old documents)
+      else if (documentUrl.includes('localhost:5000')) {
+        fullUrl = documentUrl.replace('http://localhost:5000', 'https://docnexus-backend-teresha.onrender.com');
+      }
+      
+      console.log('Downloading from:', fullUrl);
       
       // Fetch the file as a blob from the document URL
       const response = await fetch(fullUrl);

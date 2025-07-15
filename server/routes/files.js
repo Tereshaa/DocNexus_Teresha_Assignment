@@ -132,6 +132,35 @@ router.get('/:folder', async (req, res) => {
 });
 
 /**
+ * GET /api/files/check/:filename
+ * Check if a specific file exists
+ */
+router.get('/check/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    
+    // Check in both documents and uploads folders
+    const documentsResult = await fileService.getFile(`documents/${filename}`);
+    const uploadsResult = await fileService.getFile(`uploads/${filename}`);
+    
+    res.json({
+      success: true,
+      exists: documentsResult.success || uploadsResult.success,
+      inDocuments: documentsResult.success,
+      inUploads: uploadsResult.success,
+      filename: filename
+    });
+    
+  } catch (error) {
+    console.error('❌ File check failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * DELETE /api/files/:folder/:filename
  * Delete a file from local storage
  */
