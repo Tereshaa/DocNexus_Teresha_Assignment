@@ -31,14 +31,22 @@ DocNexus/
 ### **Architecture Overview**
 
 ```mermaid
-graph TD
-  A[User/Browser] -- REST API --> B[Express Backend]
-  B -- MongoDB --> C[(Database)]
-  B -- File Upload/Download --> D[S3 Bucket]
-  B -- OpenAI API --> E[OpenAI]
-  B -- CRM API --> F[Salesforce/CRM]
-  A -- React App --> G[Frontend (React/Material-UI)]
-  G -- API Calls --> B
+flowchart TD
+    User[User/Browser]
+    Frontend[Frontend (React/Material-UI)]
+    Backend[Express Backend]
+    DB[(MongoDB)]
+    S3[S3 Bucket]
+    OpenAI[OpenAI]
+    CRM[Salesforce/CRM]
+
+    User -- Uses --> Frontend
+    Frontend -- API Calls --> Backend
+    Backend -- REST API --> Frontend
+    Backend -- MongoDB --> DB
+    Backend -- File Upload/Download --> S3
+    Backend -- OpenAI API --> OpenAI
+    Backend -- CRM API --> CRM
 ```
 
 ### **Frontend**
