@@ -60,12 +60,8 @@ const Upload = () => {
       error: null,
     }));
     setFiles(prev => [...prev, ...newFiles]);
-    
-    // Only auto-upload if required fields are filled
-    if (formData.hcpName && formData.hcpSpecialty && formData.meetingDate) {
-      newFiles.forEach(uploadFile);
-    }
-  }, [formData.hcpName, formData.hcpSpecialty, formData.meetingDate]);
+    // Removed auto-upload here!
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -153,31 +149,31 @@ const Upload = () => {
       );
       // Redirect to transcript editor page after first successful upload
       if (response.data.transcriptId && !redirectedRef.current) {
-        console.log('🔄 Redirecting to transcript editor:', `/transcripts/${response.data.transcriptId}/edit`);
         setRedirected(true);
         redirectedRef.current = true;
-        setSuccessMessage('Upload successful! Redirecting to transcript editor...');
+        setSuccessMessage('Upload successful! Processing transcript...');
 
-        // Poll for transcript existence before redirecting
-        const checkTranscriptExists = async (id, retries = 10, delay = 500) => {
+        // Poll for transcript readiness (transcriptionStatus === 'completed' and keyInsights/actionItems present)
+        const checkTranscriptReady = async (id, retries = 30, delay = 2000) => {
           for (let i = 0; i < retries; i++) {
             try {
               const res = await api.get(`/transcripts/${id}`);
-              if (res.data && res.data.transcript) return true;
-            } catch (e) {
-              // Not found yet
-            }
+              const t = res.data?.data || res.data?.transcript;
+              if (t && t.transcriptionStatus === 'completed' && Array.isArray(t.keyInsights) && t.keyInsights.length > 0 && Array.isArray(t.actionItems) && t.actionItems.length > 0) {
+                return true;
+              }
+            } catch (e) {}
             await new Promise(r => setTimeout(r, delay));
           }
           return false;
         };
 
         const doRedirect = async () => {
-          const found = await checkTranscriptExists(response.data.transcriptId);
-          if (found) {
+          const ready = await checkTranscriptReady(response.data.transcriptId);
+          if (ready) {
             navigate(`/transcripts/${response.data.transcriptId}/edit`);
           } else {
-            setSuccessMessage('Transcript not found after upload. Please try again.');
+            setSuccessMessage('Transcript processing took too long. Please check the transcript list or try again.');
             redirectedRef.current = false;
           }
         };
