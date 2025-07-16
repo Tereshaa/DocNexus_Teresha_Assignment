@@ -157,11 +157,31 @@ const Upload = () => {
         setRedirected(true);
         redirectedRef.current = true;
         setSuccessMessage('Upload successful! Redirecting to transcript editor...');
-        
-        // Small delay to ensure upload is fully processed and show success message
-        setTimeout(() => {
-          navigate(`/transcripts/${response.data.transcriptId}/edit`);
-        }, 2000);
+
+        // Poll for transcript existence before redirecting
+        const checkTranscriptExists = async (id, retries = 10, delay = 500) => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              const res = await api.get(`/transcripts/${id}`);
+              if (res.data && res.data.transcript) return true;
+            } catch (e) {
+              // Not found yet
+            }
+            await new Promise(r => setTimeout(r, delay));
+          }
+          return false;
+        };
+
+        const doRedirect = async () => {
+          const found = await checkTranscriptExists(response.data.transcriptId);
+          if (found) {
+            navigate(`/transcripts/${response.data.transcriptId}/edit`);
+          } else {
+            setSuccessMessage('Transcript not found after upload. Please try again.');
+            redirectedRef.current = false;
+          }
+        };
+        doRedirect();
       } else {
         console.log('❌ Not redirecting - transcriptId:', response.data.transcriptId, 'redirected:', redirectedRef.current);
       }
