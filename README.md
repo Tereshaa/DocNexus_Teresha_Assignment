@@ -32,18 +32,18 @@ DocNexus/
 
 ```mermaid
 flowchart TD
-    User[User/Browser]
-    Frontend[Frontend (React/Material-UI)]
-    Backend[Express Backend]
-    DB[(MongoDB)]
-    S3[S3 Bucket]
-    OpenAI[OpenAI]
-    CRM[Salesforce/CRM]
+    User
+    Frontend
+    Backend
+    MongoDB
+    S3
+    OpenAI
+    CRM
 
     User -- Uses --> Frontend
     Frontend -- API Calls --> Backend
     Backend -- REST API --> Frontend
-    Backend -- MongoDB --> DB
+    Backend -- MongoDB --> MongoDB
     Backend -- File Upload/Download --> S3
     Backend -- OpenAI API --> OpenAI
     Backend -- CRM API --> CRM
