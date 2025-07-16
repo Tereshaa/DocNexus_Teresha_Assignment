@@ -196,7 +196,7 @@ class DocumentService {
         insightsSlide.addText(
           insightTexts.map((t, i) => `${i + 1}. ${t}`).join('\n'),
           {
-            x: 1, y: 0.3, w: 7, h: 4, // moved further up
+            x: 1, y: 1.3, w: 7, h: 4, // y changed from 0.3 to 1.3 for spacing below heading
             fontSize: 15,
             color: this.brandColors.dark,
             align: 'left',
@@ -205,7 +205,7 @@ class DocumentService {
         );
       } else {
         insightsSlide.addText('No key insights available for this meeting.', {
-          x: 1.2, y: 0.5, w: 7, h: 0.6, // moved further up
+          x: 1.2, y: 1.3, w: 7, h: 0.6, // y changed from 0.5 to 1.3 for spacing below heading
           fontSize: 14,
           color: this.brandColors.dark,
           italic: true,
