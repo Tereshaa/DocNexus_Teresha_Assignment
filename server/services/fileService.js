@@ -1,74 +1,50 @@
-const fs = require('fs');
+const AWS = require('aws-sdk');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
+
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
+});
+
+const BUCKET = process.env.AWS_S3_BUCKET;
 
 class FileService {
-  constructor() {
-    // Create uploads directory if it doesn't exist
-    this.uploadsDir = path.join(__dirname, '..', 'uploads');
-    this.documentsDir = path.join(__dirname, '..', 'documents');
-    this.ensureDirectories();
-  }
-
   /**
-   * Ensure required directories exist
-   */
-  ensureDirectories() {
-    const dirs = [this.uploadsDir, this.documentsDir];
-    dirs.forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-    });
-  }
-
-  /**
-   * Upload file to local storage
+   * Upload file to S3
    * @param {string} filePath - Local file path
    * @param {string} fileName - Original file name
-   * @param {string} folder - Storage folder path
+   * @param {string} folder - S3 folder
    * @param {object|null} req - Express request object (optional)
    * @returns {Promise<Object>} Upload result
    */
   async uploadFile(filePath, fileName, folder = 'uploads', req = null) {
+    const fs = require('fs');
     try {
-      console.log(`📤 Uploading file locally: ${fileName}`);
-      
       const fileExtension = path.extname(fileName);
       const uniqueFileName = `${uuidv4()}${fileExtension}`;
-      const targetDir = folder === 'uploads' ? this.uploadsDir : this.documentsDir;
-      const targetPath = path.join(targetDir, uniqueFileName);
-      
-      // Copy file to target location
-      fs.copyFileSync(filePath, targetPath);
-      
-      console.log(`✅ File uploaded successfully: ${targetPath}`);
-      
-      // Generate full URL for production
-      let baseUrl;
-      if (req) {
-        let protocol = req.protocol;
-        let host = req.get('host');
-        if (host && host.includes('onrender.com')) {
-          protocol = 'https';
-        }
-        baseUrl = protocol + '://' + host;
-      } else {
-        baseUrl = process.env.NODE_ENV === 'production' 
-          ? 'https://docnexus-backend-teresha.onrender.com'
-          : 'http://localhost:5000';
-      }
-      
+      const s3Key = `${folder}/${uniqueFileName}`;
+      const fileContent = fs.readFileSync(filePath);
+      const params = {
+        Bucket: BUCKET,
+        Key: s3Key,
+        Body: fileContent,
+        ContentType: this.getContentType(fileExtension),
+      };
+      await s3.upload(params).promise();
+      // Optionally delete local file after upload
+      fs.unlinkSync(filePath);
       return {
         success: true,
-        url: `${baseUrl}/api/files/${folder}/${uniqueFileName}`,
-        key: `${folder}/${uniqueFileName}`,
-        localPath: targetPath,
+        url: await this.getSignedUrl(s3Key),
+        key: s3Key,
         originalName: fileName,
-        size: fs.statSync(targetPath).size
+        size: fileContent.length
       };
     } catch (error) {
-      console.error(`❌ Local upload failed for ${fileName}:`, error);
+      console.error(`❌ S3 upload failed for ${fileName}:`, error);
       return {
         success: false,
         error: error.message
@@ -77,52 +53,34 @@ class FileService {
   }
 
   /**
-   * Upload buffer to local storage
+   * Upload buffer to S3
    * @param {Buffer} buffer - File buffer
    * @param {string} fileName - File name
-   * @param {string} folder - Storage folder path
+   * @param {string} folder - S3 folder
    * @param {object|null} req - Express request object (optional)
    * @returns {Promise<Object>} Upload result
    */
   async uploadBuffer(buffer, fileName, folder = 'documents', req = null) {
     try {
-      console.log(`📤 Uploading buffer locally: ${fileName}`);
-      
       const fileExtension = path.extname(fileName);
       const uniqueFileName = `${uuidv4()}${fileExtension}`;
-      const targetDir = folder === 'uploads' ? this.uploadsDir : this.documentsDir;
-      const targetPath = path.join(targetDir, uniqueFileName);
-      
-      // Write buffer to file
-      fs.writeFileSync(targetPath, buffer);
-      
-      console.log(`✅ Buffer uploaded successfully: ${targetPath}`);
-      
-      // Generate full URL for production
-      let baseUrl;
-      if (req) {
-        let protocol = req.protocol;
-        let host = req.get('host');
-        if (host && host.includes('onrender.com')) {
-          protocol = 'https';
-        }
-        baseUrl = protocol + '://' + host;
-      } else {
-        baseUrl = process.env.NODE_ENV === 'production' 
-          ? 'https://docnexus-backend-teresha.onrender.com'
-          : 'http://localhost:5000';
-      }
-      
+      const s3Key = `${folder}/${uniqueFileName}`;
+      const params = {
+        Bucket: BUCKET,
+        Key: s3Key,
+        Body: buffer,
+        ContentType: this.getContentType(fileExtension),
+      };
+      await s3.upload(params).promise();
       return {
         success: true,
-        url: `${baseUrl}/api/files/${folder}/${uniqueFileName}`,
-        key: `${folder}/${uniqueFileName}`,
-        localPath: targetPath,
+        url: await this.getSignedUrl(s3Key),
+        key: s3Key,
         originalName: fileName,
         size: buffer.length
       };
     } catch (error) {
-      console.error(`❌ Local buffer upload failed for ${fileName}:`, error);
+      console.error(`❌ S3 buffer upload failed for ${fileName}:`, error);
       return {
         success: false,
         error: error.message
@@ -131,41 +89,47 @@ class FileService {
   }
 
   /**
-   * Get file from local storage
-   * @param {string} key - File key (folder/filename)
+   * Get a signed URL for a file in S3
+   * @param {string} key - S3 key
+   * @param {number} expires - Expiry in seconds (default 1 hour)
+   * @returns {Promise<string>} Signed URL
+   */
+  async getSignedUrl(key, expires = 3600) {
+    const signedUrl = await s3.getSignedUrlPromise('getObject', {
+      Bucket: BUCKET,
+      Key: key,
+      Expires: expires,
+    });
+    
+    // Force HTTPS for production URLs to avoid mixed content issues
+    if (process.env.NODE_ENV === 'production' && signedUrl.startsWith('http://')) {
+      return signedUrl.replace('http://', 'https://');
+    }
+    
+    return signedUrl;
+  }
+
+  /**
+   * Get file from S3 (returns buffer and metadata)
+   * @param {string} key - S3 key
    * @returns {Promise<Object>} File result
    */
   async getFile(key) {
     try {
-      console.log(`📥 Getting file locally: ${key}`);
-      
-      const [folder, filename] = key.split('/');
-      const targetDir = folder === 'uploads' ? this.uploadsDir : this.documentsDir;
-      const filePath = path.join(targetDir, filename);
-      
-      if (!fs.existsSync(filePath)) {
-        throw new Error('File not found');
-      }
-      
-      const buffer = fs.readFileSync(filePath);
-      const stats = fs.statSync(filePath);
-      
-      console.log(`✅ File retrieved successfully: ${filePath}`);
-      
+      const params = {
+        Bucket: BUCKET,
+        Key: key,
+      };
+      const data = await s3.getObject(params).promise();
       return {
         success: true,
-        buffer: buffer,
-        contentType: this.getContentType(path.extname(filename)),
-        size: stats.size,
-        localPath: filePath,
-        metadata: {
-          originalName: filename,
-          uploadedAt: stats.birthtime.toISOString(),
-          fileSize: stats.size.toString()
-        }
+        buffer: data.Body,
+        contentType: data.ContentType,
+        size: data.ContentLength,
+        metadata: data.Metadata
       };
     } catch (error) {
-      console.error(`❌ Local file retrieval failed for ${key}:`, error);
+      console.error(`❌ S3 file retrieval failed for ${key}:`, error);
       return {
         success: false,
         error: error.message
@@ -174,29 +138,23 @@ class FileService {
   }
 
   /**
-   * Delete file from local storage
-   * @param {string} key - File key (folder/filename)
+   * Delete file from S3
+   * @param {string} key - S3 key
    * @returns {Promise<Object>} Delete result
    */
   async deleteFile(key) {
     try {
-      console.log(`🗑️ Deleting file locally: ${key}`);
-      
-      const [folder, filename] = key.split('/');
-      const targetDir = folder === 'uploads' ? this.uploadsDir : this.documentsDir;
-      const filePath = path.join(targetDir, filename);
-      
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log(`✅ File deleted successfully: ${filePath}`);
-      }
-      
+      const params = {
+        Bucket: BUCKET,
+        Key: key,
+      };
+      await s3.deleteObject(params).promise();
       return {
         success: true,
         message: 'File deleted successfully'
       };
     } catch (error) {
-      console.error(`❌ Local file deletion failed for ${key}:`, error);
+      console.error(`❌ S3 file deletion failed for ${key}:`, error);
       return {
         success: false,
         error: error.message
@@ -205,50 +163,32 @@ class FileService {
   }
 
   /**
-   * List files in local storage
-   * @param {string} folder - Folder to list
+   * List files in S3 folder
+   * @param {string} folder - S3 folder
    * @returns {Promise<Object>} List result
    */
   async listFiles(folder = 'uploads') {
     try {
-      console.log(`📋 Listing files locally: ${folder}`);
-      
-      const targetDir = folder === 'uploads' ? this.uploadsDir : this.documentsDir;
-      
-      if (!fs.existsSync(targetDir)) {
+      const params = {
+        Bucket: BUCKET,
+        Prefix: `${folder}/`,
+      };
+      const data = await s3.listObjectsV2(params).promise();
+      const files = await Promise.all(data.Contents.map(async (item) => {
         return {
-          success: true,
-          files: []
+          key: item.Key,
+          name: path.basename(item.Key),
+          size: item.Size,
+          lastModified: item.LastModified,
+          url: await this.getSignedUrl(item.Key)
         };
-      }
-      
-      const files = fs.readdirSync(targetDir)
-        .filter(file => fs.statSync(path.join(targetDir, file)).isFile())
-        .map(file => {
-          const filePath = path.join(targetDir, file);
-          const stats = fs.statSync(filePath);
-          // Generate full URL for production
-          const baseUrl = process.env.NODE_ENV === 'production' 
-            ? 'https://docnexus-backend-teresha.onrender.com'
-            : 'http://localhost:5000';
-          
-          return {
-            key: `${folder}/${file}`,
-            name: file,
-            size: stats.size,
-            lastModified: stats.mtime,
-            url: `${baseUrl}/api/files/${folder}/${file}`
-          };
-        });
-      
-      console.log(`✅ Files listed successfully: ${files.length} files`);
-      
+      }));
       return {
         success: true,
         files: files
       };
     } catch (error) {
-      console.error(`❌ Local file listing failed for ${folder}:`, error);
+      console.error(`❌ S3 file listing failed for ${folder}:`, error);
       return {
         success: false,
         error: error.message
@@ -257,16 +197,18 @@ class FileService {
   }
 
   /**
-   * Check if file exists
-   * @param {string} key - File key
+   * Check if file exists in S3
+   * @param {string} key - S3 key
    * @returns {Promise<boolean>} Exists result
    */
   async fileExists(key) {
     try {
-      const [folder, filename] = key.split('/');
-      const targetDir = folder === 'uploads' ? this.uploadsDir : this.documentsDir;
-      const filePath = path.join(targetDir, filename);
-      return fs.existsSync(filePath);
+      const params = {
+        Bucket: BUCKET,
+        Key: key,
+      };
+      await s3.headObject(params).promise();
+      return true;
     } catch (error) {
       return false;
     }
@@ -293,7 +235,6 @@ class FileService {
       '.txt': 'text/plain',
       '.json': 'application/json'
     };
-    
     return contentTypes[extension.toLowerCase()] || 'application/octet-stream';
   }
 }
