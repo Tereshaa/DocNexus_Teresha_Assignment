@@ -10,7 +10,7 @@ DocNexus is your all-in-one solution for:
 - **Uploading and transcribing medical meeting audio/video**
 - **AI-powered analysis** (sentiment, key insights, action items)
 - **Generating professional PDF and PowerPoint reports**
-- **Seamless CRM integration** (e.g., Salesforce)
+- **Seamless CRM integration** (Salesforce)
 - **Analytics dashboard** for actionable insights
 
 It’s built to be robust, cloud-ready, and easy for teams to use and extend.
@@ -57,9 +57,9 @@ flowchart TD
 ### **Backend**
 - **Express.js** REST API
 - **MongoDB** (Mongoose models for transcripts, users, etc.)
-- **AWS S3** for all file storage (no ephemeral storage headaches)
+- **AWS S3** for all file storage
 - **OpenAI** for transcription and analysis
-- **Salesforce/CRM** integration (easy to extend to other CRMs)
+- **Salesforce/CRM** integration 
 - **Robust error handling, logging, and security (Helmet, CORS, rate limiting)**
 
 ---
@@ -67,7 +67,7 @@ flowchart TD
 ## 🛠️ Setup: Get Running in Minutes
 
 **Prerequisites:**  
-- Node.js (v16+)
+- Node.js 
 - npm
 - MongoDB (local or Atlas)
 - AWS S3 bucket (for file storage)
@@ -84,7 +84,7 @@ cd DocNexus_Teresha_Assignment
 cd server
 cp env.example .env   # Fill in your MongoDB, AWS, and OpenAI details
 npm install
-npm run dev           # Starts backend on http://localhost:5000
+npm start           # Starts backend on http://localhost:5000
 ```
 
 ### **3. Frontend Setup**
@@ -99,22 +99,13 @@ npm start             # Starts React app on http://localhost:3000
 
 ## 🌐 **Cloud-Ready by Design**
 
-- **All file uploads go to S3** (no more “file not found” on cloud hosts)
+- **All file uploads go to S3**
 - **SPA routing works on Render, Netlify, Vercel, etc.**
 - **Environment variables for all secrets/config**
 - **Health and environment check endpoints for easy debugging**
 
 ---
 
-## 💡 **Why This Project Stands Out**
-
-- **Real-world deployment:** Handles all the “gotchas” of cloud hosting (ephemeral storage, CORS, HTTPS, etc.)
-- **Modern, readable code:** Clean separation of concerns, clear naming, and comments where it matters
-- **Extensible:** Easy to add new AI features, CRMs, or analytics
-- **User-focused:** Fast, intuitive UI with clear feedback and error handling
-- **Production-grade:** Security, error logging, and robust file handling
-
----
 
 ## 📊 **Feature Highlights**
 
@@ -122,9 +113,8 @@ npm start             # Starts React app on http://localhost:3000
 - **AI transcription** (OpenAI Whisper)
 - **Sentiment & insights analysis** (OpenAI GPT)
 - **PDF & PPT generation** (one click, branded, and beautiful)
-- **CRM sync** (Salesforce out of the box)
+- **CRM sync** (Salesforce)
 - **Analytics dashboard** (see trends, top HCPs, and more)
-- **Role-based authentication** (easy to extend for real users)
 
 ---
 
@@ -134,28 +124,10 @@ npm start             # Starts React app on http://localhost:3000
   - Add new endpoints in `server/routes/`
   - Add new UI pages in `client/src/pages/`
 - **Clear error messages and logs**
-- **Ready for CI/CD and cloud deployment**
-
----
-
-## 🤝 **Contributing**
-
-Want to make DocNexus even better?  
-- Fork, branch, and PR – I love clean, well-documented code!
-- Open an issue for bugs or feature ideas
 
 ---
 
 ## 📬 **Questions?**
 
-Open an issue, or reach out on LinkedIn/GitHub.  
-I’m always happy to talk code, healthcare, or AI!
+Open an issue, or reach out on LinkedIn/E-mail.  
 
----
-
-**Thanks for checking out DocNexus. I built this to solve real problems, and I hope you see the care and craft in every line.**
-
----
-
-*Impress your team. Delight your users. Ship with confidence.*  
-**— [Your Name]** 
