@@ -3,11 +3,25 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
-const s3 = new AWS.S3({
+// Check if AWS credentials are available
+const hasAWSCredentials = process.env.AWS_ACCESS_KEY_ID && 
+                         process.env.AWS_SECRET_ACCESS_KEY && 
+                         process.env.AWS_REGION && 
+                         process.env.AWS_S3_BUCKET;
+
+console.log('🔧 AWS Configuration Check:', {
+  hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+  hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+  hasRegion: !!process.env.AWS_REGION,
+  hasBucket: !!process.env.AWS_S3_BUCKET,
+  hasAllCredentials: hasAWSCredentials
+});
+
+const s3 = hasAWSCredentials ? new AWS.S3({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   region: process.env.AWS_REGION,
-});
+}) : null;
 
 const BUCKET = process.env.AWS_S3_BUCKET;
 
@@ -23,6 +37,12 @@ class FileService {
   async uploadFile(filePath, fileName, folder = 'uploads', req = null) {
     const fs = require('fs');
     try {
+      // Check if S3 is configured
+      if (!s3 || !BUCKET) {
+        console.warn('⚠️ S3 not configured, using local storage fallback');
+        return this.uploadToLocalStorage(filePath, fileName, folder, req);
+      }
+
       const fileExtension = path.extname(fileName);
       const uniqueFileName = `${uuidv4()}${fileExtension}`;
       const s3Key = `${folder}/${uniqueFileName}`;
@@ -45,10 +65,8 @@ class FileService {
       };
     } catch (error) {
       console.error(`❌ S3 upload failed for ${fileName}:`, error);
-      return {
-        success: false,
-        error: error.message
-      };
+      console.log('🔄 Falling back to local storage...');
+      return this.uploadToLocalStorage(filePath, fileName, folder, req);
     }
   }
 
@@ -62,6 +80,12 @@ class FileService {
    */
   async uploadBuffer(buffer, fileName, folder = 'documents', req = null) {
     try {
+      // Check if S3 is configured
+      if (!s3 || !BUCKET) {
+        console.warn('⚠️ S3 not configured, using local storage fallback for buffer');
+        return this.uploadBufferToLocalStorage(buffer, fileName, folder, req);
+      }
+
       const fileExtension = path.extname(fileName);
       const uniqueFileName = `${uuidv4()}${fileExtension}`;
       const s3Key = `${folder}/${uniqueFileName}`;
@@ -81,10 +105,8 @@ class FileService {
       };
     } catch (error) {
       console.error(`❌ S3 buffer upload failed for ${fileName}:`, error);
-      return {
-        success: false,
-        error: error.message
-      };
+      console.log('🔄 Falling back to local storage for buffer...');
+      return this.uploadBufferToLocalStorage(buffer, fileName, folder, req);
     }
   }
 
@@ -95,6 +117,14 @@ class FileService {
    * @returns {Promise<string>} Signed URL
    */
   async getSignedUrl(key, expires = 3600) {
+    // If S3 is not configured, return a local file URL
+    if (!s3 || !BUCKET) {
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://docnexus-backend-teresha.onrender.com' 
+        : 'http://localhost:5000';
+      return `${baseUrl}/api/files/${key}`;
+    }
+
     const signedUrl = await s3.getSignedUrlPromise('getObject', {
       Bucket: BUCKET,
       Key: key,
@@ -116,6 +146,11 @@ class FileService {
    */
   async getFile(key) {
     try {
+      // If S3 is not configured, read from local storage
+      if (!s3 || !BUCKET) {
+        return this.getFileFromLocalStorage(key);
+      }
+
       const params = {
         Bucket: BUCKET,
         Key: key,
@@ -130,10 +165,8 @@ class FileService {
       };
     } catch (error) {
       console.error(`❌ S3 file retrieval failed for ${key}:`, error);
-      return {
-        success: false,
-        error: error.message
-      };
+      console.log('🔄 Falling back to local storage...');
+      return this.getFileFromLocalStorage(key);
     }
   }
 
@@ -211,6 +244,136 @@ class FileService {
       return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  /**
+   * Upload buffer to local storage (fallback when S3 is not available)
+   * @param {Buffer} buffer - File buffer
+   * @param {string} fileName - Original file name
+   * @param {string} folder - Storage folder
+   * @param {object|null} req - Express request object (optional)
+   * @returns {Promise<Object>} Upload result
+   */
+  async uploadBufferToLocalStorage(buffer, fileName, folder = 'documents', req = null) {
+    const fs = require('fs');
+    try {
+      const fileExtension = path.extname(fileName);
+      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const localFolder = path.join(__dirname, '..', folder);
+      
+      // Create folder if it doesn't exist
+      if (!fs.existsSync(localFolder)) {
+        fs.mkdirSync(localFolder, { recursive: true });
+      }
+      
+      const localFilePath = path.join(localFolder, uniqueFileName);
+      
+      // Write buffer to local storage
+      fs.writeFileSync(localFilePath, buffer);
+      
+      // Generate local URL
+      const baseUrl = req ? `${req.protocol}://${req.get('host')}` : 'http://localhost:5000';
+      const localUrl = `${baseUrl}/api/files/${folder}/${uniqueFileName}`;
+      
+      console.log('✅ Buffer uploaded to local storage:', localUrl);
+      
+      return {
+        success: true,
+        url: localUrl,
+        key: `${folder}/${uniqueFileName}`,
+        originalName: fileName,
+        size: buffer.length
+      };
+    } catch (error) {
+      console.error(`❌ Local storage buffer upload failed for ${fileName}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get file from local storage (fallback when S3 is not available)
+   * @param {string} key - File key (folder/filename)
+   * @returns {Promise<Object>} File result
+   */
+  async getFileFromLocalStorage(key) {
+    const fs = require('fs');
+    try {
+      const localFilePath = path.join(__dirname, '..', key);
+      
+      if (!fs.existsSync(localFilePath)) {
+        return {
+          success: false,
+          error: 'File not found in local storage'
+        };
+      }
+      
+      const buffer = fs.readFileSync(localFilePath);
+      const fileExtension = path.extname(key);
+      
+      return {
+        success: true,
+        buffer: buffer,
+        contentType: this.getContentType(fileExtension),
+        size: buffer.length,
+        metadata: {}
+      };
+    } catch (error) {
+      console.error(`❌ Local file retrieval failed for ${key}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Upload file to local storage (fallback when S3 is not available)
+   * @param {string} filePath - Local file path
+   * @param {string} fileName - Original file name
+   * @param {string} folder - Storage folder
+   * @param {object|null} req - Express request object (optional)
+   * @returns {Promise<Object>} Upload result
+   */
+  async uploadToLocalStorage(filePath, fileName, folder = 'uploads', req = null) {
+    const fs = require('fs');
+    try {
+      const fileExtension = path.extname(fileName);
+      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const localFolder = path.join(__dirname, '..', folder);
+      
+      // Create folder if it doesn't exist
+      if (!fs.existsSync(localFolder)) {
+        fs.mkdirSync(localFolder, { recursive: true });
+      }
+      
+      const localFilePath = path.join(localFolder, uniqueFileName);
+      
+      // Copy file to local storage
+      fs.copyFileSync(filePath, localFilePath);
+      
+      // Generate local URL
+      const baseUrl = req ? `${req.protocol}://${req.get('host')}` : 'http://localhost:5000';
+      const localUrl = `${baseUrl}/api/files/${folder}/${uniqueFileName}`;
+      
+      console.log('✅ File uploaded to local storage:', localUrl);
+      
+      return {
+        success: true,
+        url: localUrl,
+        key: `${folder}/${uniqueFileName}`,
+        originalName: fileName,
+        size: fs.statSync(localFilePath).size
+      };
+    } catch (error) {
+      console.error(`❌ Local storage upload failed for ${fileName}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 

@@ -87,6 +87,23 @@ app.post('/api/test-upload', (req, res) => {
   });
 });
 
+// Environment check endpoint
+app.get('/api/env-check', (req, res) => {
+  res.json({
+    success: true,
+    environment: {
+      nodeEnv: process.env.NODE_ENV,
+      hasOpenAI: !!process.env.OPENAI_API_KEY,
+      hasMongoDB: !!process.env.MONGODB_URI,
+      hasAWSAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+      hasAWSSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+      hasAWSRegion: !!process.env.AWS_REGION,
+      hasS3Bucket: !!process.env.AWS_S3_BUCKET,
+      port: process.env.PORT || 5000
+    }
+  });
+});
+
 // API routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/transcripts', transcriptRoutes);

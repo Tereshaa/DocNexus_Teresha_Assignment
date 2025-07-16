@@ -41,81 +41,128 @@ const GenerateDocumentDialog = ({ open, onClose, onSuccess, transcriptId, transc
   };
 
   const handleDeletePDF = () => {
-    // TODO: Implement PDF deletion logic
-    alert('Delete PDF clicked');
+    // Placeholder for PDF deletion functionality
+    console.log('PDF deletion requested');
   };
 
   const handleDeletePPT = () => {
-    // TODO: Implement PPT deletion logic
-    alert('Delete PPT clicked');
+    // Placeholder for PPT deletion functionality
+    console.log('PPT deletion requested');
   };
 
   const handleDeleteAll = () => {
-    // TODO: Implement delete all logic
-    alert('Delete All clicked');
+    // Placeholder for delete all functionality
+    console.log('Delete all requested');
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Generate Document</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Box sx={{ mt: 1 }}>
-          <TextField
-            label="Document Title"
-            value={documentTitle}
-            onChange={(e) => setDocumentTitle(e.target.value)}
-            fullWidth
-            placeholder="Enter a title for your document"
-            sx={{ mb: 2 }}
-          />
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Document Type</InputLabel>
-            <Select
-              value={documentType}
-              label="Document Type"
-              onChange={(e) => setDocumentType(e.target.value)}
+        
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel>Select Transcript</InputLabel>
+          <Select
+            value={selectedTranscript}
+            onChange={(e) => setSelectedTranscript(e.target.value)}
+            label="Select Transcript"
+          >
+            {transcripts.map((transcript) => (
+              <MenuItem key={transcript._id} value={transcript._id}>
+                {transcript.hcpName} - {transcript.meetingDate}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <TextField
+          fullWidth
+          label="Document Title"
+          value={documentTitle}
+          onChange={(e) => setDocumentTitle(e.target.value)}
+          sx={{ mb: 2 }}
+        />
+
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel>Document Type</InputLabel>
+          <Select
+            value={documentType}
+            onChange={(e) => setDocumentType(e.target.value)}
+            label="Document Type"
+          >
+            <MenuItem value="pdf">PDF Report</MenuItem>
+            <MenuItem value="ppt">PowerPoint Presentation</MenuItem>
+            <MenuItem value="both">Both (PDF + PowerPoint)</MenuItem>
+          </Select>
+        </FormControl>
+
+        <Typography variant="h6" sx={{ mb: 1 }}>Document Options</Typography>
+        <List dense>
+          <ListItem>
+            <ListItemText 
+              primary="Include Key Insights" 
+              secondary="Add AI-generated insights and recommendations"
+            />
+            <Checkbox defaultChecked />
+          </ListItem>
+          <ListItem>
+            <ListItemText 
+              primary="Include Sentiment Analysis" 
+              secondary="Add emotional tone and sentiment breakdown"
+            />
+            <Checkbox defaultChecked />
+          </ListItem>
+          <ListItem>
+            <ListItemText 
+              primary="Include Action Items" 
+              secondary="Add extracted action items and follow-ups"
+            />
+            <Checkbox defaultChecked />
+          </ListItem>
+        </List>
+
+        <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>Quick Actions</Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button
+              size="small"
+              startIcon={<PictureAsPdfIcon />}
+              onClick={handleDeletePDF}
+              variant="outlined"
             >
-              <MenuItem value="pdf">PDF Report</MenuItem>
-              <MenuItem value="ppt">PowerPoint Presentation</MenuItem>
-              <MenuItem value="both">Both (PDF + PPT)</MenuItem>
-            </Select>
-          </FormControl>
-          {!transcriptId && (
-            <>
-              <Typography variant="h6" gutterBottom>Select Transcript</Typography>
-              <List sx={{ maxHeight: 300, overflow: 'auto', mb: 2 }}>
-                {transcripts.map((transcript) => (
-                  <ListItem key={transcript._id}>
-                    <Checkbox
-                      checked={selectedTranscript === transcript._id}
-                      onChange={() => setSelectedTranscript(transcript._id)}
-                    />
-                    <ListItemText
-                      primary={transcript.fileName || 'Untitled'}
-                      secondary={`${transcript.hcpName} • ${transcript.specialty} • ${new Date(transcript.createdAt).toLocaleDateString()}`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </>
-          )}
+              Delete PDF
+            </Button>
+            <Button
+              size="small"
+              startIcon={<SlideshowIcon />}
+              onClick={handleDeletePPT}
+              variant="outlined"
+            >
+              Delete PPT
+            </Button>
+            <Button
+              size="small"
+              startIcon={<DeleteIcon />}
+              onClick={handleDeleteAll}
+              variant="outlined"
+              color="error"
+            >
+              Delete All
+            </Button>
+          </Box>
         </Box>
       </DialogContent>
       <DialogActions>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, width: '100%' }}>
-          <Button onClick={onClose} color="primary">
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            color="primary"
-            variant="contained"
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={20} color="inherit" /> : 'Generate'}
-          </Button>
-        </Box>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button 
+          onClick={handleSubmit} 
+          variant="contained" 
+          disabled={loading || !selectedTranscript || !documentTitle}
+          startIcon={loading ? <CircularProgress size={16} /> : null}
+        >
+          {loading ? 'Generating...' : 'Generate Document'}
+        </Button>
       </DialogActions>
     </Dialog>
   );
