@@ -84,7 +84,7 @@ cd DocNexus_Teresha_Assignment
 cd server
 cp env.example .env   # Fill in your MongoDB, AWS, and OpenAI details
 npm install
-npm run dev           # Starts backend on http://localhost:5000
+npm start           # Starts backend on http://localhost:5000
 ```
 
 ### **3. Frontend Setup**
