@@ -138,24 +138,8 @@ npm start             # Starts React app on http://localhost:3000
 
 ---
 
-## 🤝 **Contributing**
-
-Want to make DocNexus even better?  
-- Fork, branch, and PR – I love clean, well-documented code!
-- Open an issue for bugs or feature ideas
-
----
-
 ## 📬 **Questions?**
 
 Open an issue, or reach out on LinkedIn/GitHub.  
 I’m always happy to talk code, healthcare, or AI!
 
----
-
-**Thanks for checking out DocNexus. I built this to solve real problems, and I hope you see the care and craft in every line.**
-
----
-
-*Impress your team. Delight your users. Ship with confidence.*  
-**— [Your Name]** 
