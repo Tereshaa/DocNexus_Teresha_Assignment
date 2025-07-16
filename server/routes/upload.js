@@ -128,8 +128,8 @@ router.post('/', uploadMiddleware, async (req, res) => {
       });
     }
 
-    // Upload file to local storage
-    console.log('📤 Uploading file to local storage...');
+    // Upload file to S3 (or local fallback)
+    console.log('📤 Uploading file to S3...');
     const fileResult = await fileService.uploadFile(
       req.file.path,
       req.file.originalname,
@@ -149,6 +149,7 @@ router.post('/', uploadMiddleware, async (req, res) => {
     const transcript = new Transcript({
       originalFileName: req.file.originalname,
       fileUrl: fileResult.url,
+      fileKey: fileResult.key, // Save S3 key for later retrieval
       fileSize: req.file.size,
       fileType: fileType,
       mimeType: req.file.mimetype,
@@ -164,8 +165,8 @@ router.post('/', uploadMiddleware, async (req, res) => {
 
     await transcript.save();
 
-    // Start transcription process asynchronously
-    processTranscription(transcript._id, req.file.path);
+    // Start transcription process asynchronously, pass S3 key
+    processTranscription(transcript._id, fileResult.key);
 
     console.log('✅ File upload completed successfully');
     
@@ -425,7 +426,14 @@ router.delete('/:transcriptId', async (req, res) => {
  * @param {string} transcriptId - Transcript ID
  * @param {string} filePath - Local file path
  */
-async function processTranscription(transcriptId, filePath) {
+async function processTranscription(transcriptId, fileKey) {
+  const fileService = require('../services/fileService');
+  const openaiService = require('../services/openaiService');
+  const Transcript = require('../models/Transcript');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+
   try {
     console.log(`🎤 Starting transcription for transcript: ${transcriptId}`);
     
@@ -435,9 +443,25 @@ async function processTranscription(transcriptId, filePath) {
       processingStartTime: new Date()
     });
 
+    // Download file from S3 (or local fallback)
+    const fileResult = await fileService.getFile(fileKey);
+    if (!fileResult.success) {
+      throw new Error(`Failed to download file for transcription: ${fileResult.error}`);
+    }
+
+    // Save to temp file for ffmpeg/OpenAI
+    const ext = path.extname(fileKey);
+    const tempFilePath = path.join(os.tmpdir(), `${transcriptId}${ext}`);
+    fs.writeFileSync(tempFilePath, fileResult.buffer);
+
     // Transcribe audio
-    const transcriptionResult = await openaiService.transcribeAudio(filePath);
-    
+    const transcriptionResult = await openaiService.transcribeAudio(tempFilePath);
+
+    // Clean up temp file
+    if (fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
+    }
+
     if (!transcriptionResult.success) {
       // Check if it's a retryable error
       if (transcriptionResult.retryable) {
@@ -475,7 +499,6 @@ async function processTranscription(transcriptId, filePath) {
 
   } catch (error) {
     console.error(`❌ Transcription processing failed for ${transcriptId}:`, error);
-    
     // Update status to failed
     await Transcript.findByIdAndUpdate(transcriptId, {
       transcriptionStatus: 'failed',
@@ -487,10 +510,6 @@ async function processTranscription(transcriptId, filePath) {
         }
       }
     });
-  } finally {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
   }
 }
 
