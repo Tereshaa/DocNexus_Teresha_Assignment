@@ -22,6 +22,9 @@ class OpenAIService {
   async transcribeAudio(filePath, language = 'en') {
     let audioPath = filePath;
     let tempAudioCreated = false;
+    const maxRetries = 2;
+    let attempt = 0;
+    const sleep = ms => new Promise(res => setTimeout(res, ms));
     try {
       console.log(`🎤 Starting OpenAI transcription for: ${filePath}`);
       console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Present' : 'Missing'}`);
@@ -50,36 +53,48 @@ class OpenAIService {
             .run();
         });
       }
-      
-      console.log(`🚀 Sending to OpenAI Whisper API...`);
-      const transcription = await this.openai.audio.transcriptions.create({
-        file: fs.createReadStream(audioPath),
-        model: 'whisper-1',
-        language: language,
-        response_format: 'verbose_json',
-        timestamp_granularities: ['word']
-      });
-      console.log(`✅ OpenAI transcription completed for: ${filePath}`);
-      return {
-        success: true,
-        text: transcription.text,
-        confidence: transcription.confidence || 0,
-        language: transcription.language,
-        duration: transcription.duration,
-        segments: transcription.segments || []
-      };
-    } catch (error) {
-      console.error(`❌ OpenAI transcription failed for ${filePath}:`, error);
-      console.error(`🔍 Error details:`, {
-        message: error.message,
-        status: error.status,
-        code: error.code,
-        type: error.type,
-        cause: error.cause
-      });
+      let lastError = null;
+      while (attempt < maxRetries) {
+        try {
+          console.log(`🚀 Sending to OpenAI Whisper API... (attempt ${attempt + 1})`);
+          // If the OpenAI SDK supports timeout, set it here. Otherwise, rely on default.
+          const transcription = await this.openai.audio.transcriptions.create({
+            file: fs.createReadStream(audioPath),
+            model: 'whisper-1',
+            language: language,
+            response_format: 'verbose_json',
+            timestamp_granularities: ['word']
+          });
+          console.log(`✅ OpenAI transcription completed for: ${filePath}`);
+          return {
+            success: true,
+            text: transcription.text,
+            confidence: transcription.confidence || 0,
+            language: transcription.language,
+            duration: transcription.duration,
+            segments: transcription.segments || []
+          };
+        } catch (error) {
+          lastError = error;
+          // Retry only on network errors
+          const isNetworkError = error.code === 'ECONNRESET' || error.message?.includes('ECONNRESET') || error.message?.includes('Connection error') || error.cause?.code === 'ECONNRESET';
+          console.error(`❌ OpenAI transcription failed (attempt ${attempt + 1}) for ${filePath}:`, error);
+          if (isNetworkError && attempt < maxRetries - 1) {
+            const wait = 1000 * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
+            console.log(`🔁 Retrying OpenAI transcription in ${wait / 1000}s...`);
+            await sleep(wait);
+            attempt++;
+            continue;
+          } else {
+            break;
+          }
+        }
+      }
+      // If we reach here, all attempts failed
+      console.error(`❌ OpenAI transcription failed after ${maxRetries} attempts for ${filePath}:`, lastError);
       return {
         success: false,
-        error: error.message
+        error: lastError?.message || 'Unknown error'
       };
     } finally {
       // Clean up temp audio file if created
