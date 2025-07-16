@@ -49,6 +49,7 @@ const Upload = () => {
   const navigate = useNavigate();
   const [redirected, setRedirected] = useState(false);
   const redirectedRef = useRef(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const onDrop = useCallback((acceptedFiles) => {
     const newFiles = acceptedFiles.map(file => ({
@@ -150,12 +151,17 @@ const Upload = () => {
             : f
         )
       );
-      // Redirect to transcript page after first successful upload
+      // Redirect to transcript editor page after first successful upload
       if (response.data.transcriptId && !redirectedRef.current) {
-        console.log('🔄 Redirecting to transcript page:', `/transcripts/${response.data.transcriptId}`);
+        console.log('🔄 Redirecting to transcript editor:', `/transcripts/${response.data.transcriptId}/edit`);
         setRedirected(true);
         redirectedRef.current = true;
-        navigate(`/transcripts/${response.data.transcriptId}`);
+        setSuccessMessage('Upload successful! Redirecting to transcript editor...');
+        
+        // Small delay to ensure upload is fully processed and show success message
+        setTimeout(() => {
+          navigate(`/transcripts/${response.data.transcriptId}/edit`);
+        }, 2000);
       } else {
         console.log('❌ Not redirecting - transcriptId:', response.data.transcriptId, 'redirected:', redirectedRef.current);
       }
@@ -252,6 +258,7 @@ const Upload = () => {
     return () => {
       redirectedRef.current = false;
       setRedirected(false);
+      setSuccessMessage('');
     };
   }, []);
 
@@ -265,6 +272,13 @@ const Upload = () => {
       <Typography variant="body1" color="textSecondary" sx={{ mb: 4 }}>
         Upload audio or video recordings from HCP meetings for transcription and analysis
       </Typography>
+
+      {/* Success Message */}
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          {successMessage}
+        </Alert>
+      )}
 
       <Grid container spacing={3}>
         {/* Upload Form */}

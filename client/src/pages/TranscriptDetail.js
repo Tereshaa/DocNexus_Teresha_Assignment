@@ -63,6 +63,7 @@ const TranscriptDetail = () => {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState(0);
   const [refreshInterval, setRefreshInterval] = useState(null);
+  const [timerInterval, setTimerInterval] = useState(null);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
 
   const audioRef = useRef(null);
@@ -126,6 +127,9 @@ const TranscriptDetail = () => {
       if (refreshInterval) {
         clearInterval(refreshInterval);
       }
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
     };
   }, [id]);
 
@@ -149,10 +153,18 @@ const TranscriptDetail = () => {
       if (transcriptData.transcriptionStatus === 'pending' || transcriptData.transcriptionStatus === 'processing') {
         // Start refresh interval if not already running
         if (!refreshInterval) {
-          setProcessingStartTime(Date.now());
-          const interval = setInterval(async () => {
-            setProcessingTime(Math.floor((Date.now() - processingStartTime) / 1000));
-            // Fetch transcript status without page reload
+          const startTime = Date.now();
+          setProcessingStartTime(startTime);
+          
+          // Timer for processing time display (updates every second)
+          const newTimerInterval = setInterval(() => {
+            const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+            setProcessingTime(elapsedSeconds);
+          }, 1000);
+          setTimerInterval(newTimerInterval);
+          
+          // Status polling interval (updates every 10 seconds)
+          const newStatusInterval = setInterval(async () => {
             try {
               const response = await api.get(`/transcripts/${id}`);
               const transcriptData = response.data.data;
@@ -165,7 +177,9 @@ const TranscriptDetail = () => {
               
               // If transcript is completed, stop polling
               if (transcriptData.transcriptionStatus === 'completed') {
-                clearInterval(interval);
+                clearInterval(newTimerInterval);
+                clearInterval(newStatusInterval);
+                setTimerInterval(null);
                 setRefreshInterval(null);
                 setShowSuccessMessage(true);
                 setTimeout(() => setShowSuccessMessage(false), 5000);
@@ -173,17 +187,26 @@ const TranscriptDetail = () => {
             } catch (error) {
               console.error('Error polling transcript status:', error);
               // Stop polling on error to avoid infinite retries
-              clearInterval(interval);
+              clearInterval(newTimerInterval);
+              clearInterval(newStatusInterval);
+              setTimerInterval(null);
               setRefreshInterval(null);
             }
-          }, 10000); // Refresh every 10 seconds
-          setRefreshInterval(interval);
+          }, 10000); // Poll status every 10 seconds
+          
+          setRefreshInterval(newStatusInterval);
         }
       } else {
         // Stop refresh if transcript is completed
-        if (refreshInterval) {
-          clearInterval(refreshInterval);
-          setRefreshInterval(null);
+        if (refreshInterval || timerInterval) {
+          if (refreshInterval) {
+            clearInterval(refreshInterval);
+            setRefreshInterval(null);
+          }
+          if (timerInterval) {
+            clearInterval(timerInterval);
+            setTimerInterval(null);
+          }
           if (transcriptData.transcriptionStatus === 'completed') {
             setShowSuccessMessage(true);
             setTimeout(() => setShowSuccessMessage(false), 5000);
@@ -195,6 +218,10 @@ const TranscriptDetail = () => {
       if (refreshInterval) {
         clearInterval(refreshInterval);
         setRefreshInterval(null);
+      }
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        setTimerInterval(null);
       }
     } finally {
       setLoading(false);
@@ -264,8 +291,18 @@ const TranscriptDetail = () => {
   };
 
   const formatProcessingTime = (seconds) => {
+    // Handle invalid or negative values
+    if (!seconds || seconds < 0 || isNaN(seconds)) {
+      return '0:00';
+    }
+    
+    // Handle very large numbers (overflow protection)
+    if (seconds > 86400) { // More than 24 hours
+      return '24:00+';
+    }
+    
     const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
+    const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
@@ -355,7 +392,7 @@ const TranscriptDetail = () => {
       </Box>
 
       {/* Processing Indicator */}
-      {refreshInterval && <ProcessingIndicator />}
+      {timerInterval && <ProcessingIndicator />}
 
       {/* Success Message */}
       {showSuccessMessage && (
@@ -483,7 +520,7 @@ const TranscriptDetail = () => {
         <Box sx={{ mb: 3 }}>
           <Typography variant="h6">Transcript</Typography>
           
-          {refreshInterval ? (
+          {timerInterval ? (
             <Card sx={{ p: 3, textAlign: 'center', bgcolor: 'grey.50' }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ 
