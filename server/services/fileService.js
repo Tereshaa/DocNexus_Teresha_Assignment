@@ -17,13 +17,27 @@ console.log('🔧 AWS Configuration Check:', {
   hasAllCredentials: hasAWSCredentials
 });
 
-const s3 = hasAWSCredentials ? new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION,
-}) : null;
+// Only create S3 instance if all credentials are available
+let s3 = null;
+let BUCKET = null;
 
-const BUCKET = process.env.AWS_S3_BUCKET;
+if (hasAWSCredentials) {
+  try {
+    s3 = new AWS.S3({
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      region: process.env.AWS_REGION,
+    });
+    BUCKET = process.env.AWS_S3_BUCKET;
+    console.log('✅ S3 client initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize S3 client:', error);
+    s3 = null;
+    BUCKET = null;
+  }
+} else {
+  console.log('⚠️ S3 not configured - will use local storage fallback');
+}
 
 class FileService {
   /**
@@ -66,6 +80,7 @@ class FileService {
     } catch (error) {
       console.error(`❌ S3 upload failed for ${fileName}:`, error);
       console.log('🔄 Falling back to local storage...');
+      // Don't delete the original file since we're falling back to local storage
       return this.uploadToLocalStorage(filePath, fileName, folder, req);
     }
   }
@@ -352,7 +367,7 @@ class FileService {
       
       const localFilePath = path.join(localFolder, uniqueFileName);
       
-      // Copy file to local storage
+      // Copy file to local storage (don't delete original since it's managed by multer)
       fs.copyFileSync(filePath, localFilePath);
       
       // Generate local URL
