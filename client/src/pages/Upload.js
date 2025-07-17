@@ -50,6 +50,7 @@ const Upload = () => {
   const [redirected, setRedirected] = useState(false);
   const redirectedRef = useRef(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [uploadAttempted, setUploadAttempted] = useState(false);
 
   const onDrop = useCallback((acceptedFiles) => {
     const newFiles = acceptedFiles.map(file => ({
@@ -80,6 +81,12 @@ const Upload = () => {
   };
 
   const uploadFile = async (fileData) => {
+    // Prevent multiple uploads of the same file
+    if (fileData.status === 'uploading' || fileData.status === 'completed') {
+      console.log('⚠️ File already being processed or completed:', fileData.file.name);
+      return;
+    }
+    
     // Check if required fields are filled
     if (!formData.hcpName || !formData.hcpSpecialty || !formData.meetingDate) {
       console.error('Required fields missing:', {
@@ -149,34 +156,60 @@ const Upload = () => {
       );
       // Redirect to transcript editor page after first successful upload
       if (response.data.transcriptId && !redirectedRef.current) {
+        // Set redirect state immediately to prevent race conditions
         setRedirected(true);
         redirectedRef.current = true;
         setSuccessMessage('Upload successful! Processing transcript...');
 
-        // Poll for transcript readiness (transcriptionStatus === 'completed' and keyInsights/actionItems present)
-        const checkTranscriptReady = async (id, retries = 30, delay = 2000) => {
+        // Poll for transcript readiness with improved logic
+        const checkTranscriptReady = async (id, retries = 60, delay = 3000) => {
+          console.log(`🔄 Starting transcript readiness check for ID: ${id}`);
+          
           for (let i = 0; i < retries; i++) {
             try {
               const res = await api.get(`/transcripts/${id}`);
               const t = res.data?.data || res.data?.transcript;
-              if (t && t.transcriptionStatus === 'completed' && Array.isArray(t.keyInsights) && t.keyInsights.length > 0 && Array.isArray(t.actionItems) && t.actionItems.length > 0) {
+              
+              console.log(`📊 Poll attempt ${i + 1}/${retries}:`, {
+                status: t?.transcriptionStatus,
+                hasInsights: Array.isArray(t?.keyInsights) && t.keyInsights.length > 0,
+                hasActions: Array.isArray(t?.actionItems) && t.actionItems.length > 0
+              });
+              
+              // Check if transcript is completed and has basic content
+              if (t && t.transcriptionStatus === 'completed' && (t.rawTranscript || t.editedTranscript)) {
+                console.log('✅ Transcript is ready for editing');
                 return true;
               }
-            } catch (e) {}
+              
+              // If still processing, continue polling
+              if (t && (t.transcriptionStatus === 'pending' || t.transcriptionStatus === 'processing')) {
+                console.log(`⏳ Still processing... (${i + 1}/${retries})`);
+              }
+              
+            } catch (e) {
+              console.error(`❌ Poll attempt ${i + 1} failed:`, e);
+            }
+            
             await new Promise(r => setTimeout(r, delay));
           }
+          
+          console.log('⏰ Polling timeout reached');
           return false;
         };
 
         const doRedirect = async () => {
           const ready = await checkTranscriptReady(response.data.transcriptId);
           if (ready) {
+            console.log('🚀 Redirecting to transcript editor');
             navigate(`/transcripts/${response.data.transcriptId}/edit`);
           } else {
-            setSuccessMessage('Transcript processing took too long. Please check the transcript list or try again.');
+            console.log('⚠️ Transcript processing timeout');
+            setSuccessMessage('Transcript processing took too long. You can check the transcript list or try again.');
             redirectedRef.current = false;
           }
         };
+        
         doRedirect();
       } else {
         console.log('❌ Not redirecting - transcriptId:', response.data.transcriptId, 'redirected:', redirectedRef.current);
@@ -200,30 +233,64 @@ const Upload = () => {
   };
 
   const handleUpload = async () => {
-    if (files.length === 0) return;
+    if (files.length === 0 || uploadAttempted || uploading) return;
 
+    setUploadAttempted(true);
     setUploading(true);
     const pendingFiles = files.filter(f => f.status === 'pending');
 
-    for (const fileData of pendingFiles) {
+    // Only upload the first pending file to prevent double uploads
+    if (pendingFiles.length > 0) {
+      const fileData = pendingFiles[0];
+      
       setFiles(prev =>
         prev.map(f =>
           f.id === fileData.id ? { ...f, status: 'uploading' } : f
         )
       );
-      await uploadFile(fileData);
+      
+      try {
+        await uploadFile(fileData);
+      } catch (error) {
+        console.error('Upload failed:', error);
+        // Reset upload state on error
+        setUploadAttempted(false);
+      }
     }
 
     setUploading(false);
   };
 
   const removeFile = (fileId) => {
-    setFiles(prev => prev.filter(f => f.id !== fileId));
+    setFiles(prev => {
+      const newFiles = prev.filter(f => f.id !== fileId);
+      
+      // Reset upload state if all files are removed
+      if (newFiles.length === 0) {
+        setUploadAttempted(false);
+        setRedirected(false);
+        redirectedRef.current = false;
+        setSuccessMessage('');
+      }
+      
+      return newFiles;
+    });
+    
     setUploadProgress(prev => {
       const newProgress = { ...prev };
       delete newProgress[fileId];
       return newProgress;
     });
+  };
+
+  const resetUpload = () => {
+    setFiles([]);
+    setUploadProgress({});
+    setUploadAttempted(false);
+    setRedirected(false);
+    redirectedRef.current = false;
+    setSuccessMessage('');
+    setUploading(false);
   };
 
   const getStatusIcon = (status) => {
@@ -275,8 +342,20 @@ const Upload = () => {
       redirectedRef.current = false;
       setRedirected(false);
       setSuccessMessage('');
+      setUploading(false);
+      setUploadAttempted(false);
     };
   }, []);
+
+  // Reset redirect state when files change (new upload session)
+  useEffect(() => {
+    if (files.length === 0) {
+      redirectedRef.current = false;
+      setRedirected(false);
+      setSuccessMessage('');
+      setUploadAttempted(false);
+    }
+  }, [files.length]);
 
   const requiredFieldsFilled = formData.hcpName && formData.hcpSpecialty && formData.meetingDate;
 
@@ -445,16 +524,26 @@ const Upload = () => {
                     </Alert>
                   )}
                   
-                  {requiredFieldsFilled && files.some(f => f.status === 'pending') && (
-                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                  {/* Upload Button - Show when there are pending files OR when upload was attempted */}
+                  {requiredFieldsFilled && (files.some(f => f.status === 'pending') || uploadAttempted) && (
+                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center', gap: 2 }}>
                       <Button
                         variant="contained"
                         onClick={handleUpload}
-                        disabled={uploading}
+                        disabled={uploading || redirected || uploadAttempted}
                         startIcon={<CloudUpload />}
                       >
-                        {uploading ? 'Uploading...' : 'Upload Files'}
+                        {uploading ? 'Uploading...' : redirected ? 'Processing...' : uploadAttempted ? 'Upload Complete' : 'Upload Files'}
                       </Button>
+                      {(uploadAttempted || redirected) && (
+                        <Button
+                          variant="outlined"
+                          onClick={resetUpload}
+                          disabled={uploading}
+                        >
+                          Start Over
+                        </Button>
+                      )}
                     </Box>
                   )}
                 </Box>

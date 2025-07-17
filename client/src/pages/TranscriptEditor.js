@@ -46,8 +46,9 @@ const TranscriptEditor = () => {
 
   useEffect(() => {
     if (transcript) {
-      setEditedTranscription(transcript.transcription || '');
-      setEditHistory([transcript.transcription || '']);
+      const transcriptText = transcript.editedTranscript || transcript.rawTranscript || transcript.transcription || '';
+      setEditedTranscription(transcriptText);
+      setEditHistory([transcriptText]);
       setHistoryIndex(0);
     }
   }, [transcript]);
@@ -56,7 +57,8 @@ const TranscriptEditor = () => {
     try {
       setLoading(true);
       const response = await api.get(`/transcripts/${id}`);
-      setTranscript(response.data.transcript);
+      const transcriptData = response.data.data || response.data.transcript;
+      setTranscript(transcriptData);
     } catch (error) {
       console.error('Error fetching transcript:', error);
     } finally {
@@ -114,7 +116,8 @@ const TranscriptEditor = () => {
       });
       
       // Trigger reanalysis if needed
-      if (transcript.transcription !== editedTranscription) {
+      const originalText = transcript.editedTranscript || transcript.rawTranscript || transcript.transcription || '';
+      if (originalText !== editedTranscription) {
         await api.post(`/transcripts/${id}/reanalyze`);
       }
       
@@ -127,7 +130,8 @@ const TranscriptEditor = () => {
   };
 
   const handleCancel = () => {
-    if (transcript.transcription !== editedTranscription) {
+    const originalText = transcript.editedTranscript || transcript.rawTranscript || transcript.transcription || '';
+    if (originalText !== editedTranscription) {
       setValidationDialogOpen(true);
     } else {
       navigate(`/transcripts/${id}`);
@@ -170,7 +174,7 @@ const TranscriptEditor = () => {
             Edit Transcript
           </Typography>
           <Typography variant="body1" color="textSecondary">
-            {transcript.fileName} • {transcript.hcpName} • {transcript.specialty}
+            {transcript.originalFileName || transcript.fileName} • {transcript.hcpName} • {transcript.hcpSpecialty || transcript.specialty}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
