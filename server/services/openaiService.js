@@ -187,10 +187,51 @@ class OpenAIService {
 
       const content = response.choices[0].message.content;
       console.log('Raw OpenAI sentiment response:', content);
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found in OpenAI response');
-      const result = JSON.parse(jsonMatch[0]);
-      console.log('Extracted sentiment JSON:', result);
+      
+      // Improved JSON extraction and parsing
+      let result;
+      try {
+        // First try to find JSON in the response
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No JSON found in OpenAI response');
+        }
+        
+        const jsonString = jsonMatch[0];
+        result = JSON.parse(jsonString);
+        
+        // Validate and clean emotionalIndicators if it's a string
+        if (result.emotionalIndicators && typeof result.emotionalIndicators === 'string') {
+          try {
+            // Try to parse it as JSON if it's a string representation
+            result.emotionalIndicators = JSON.parse(result.emotionalIndicators);
+          } catch (parseError) {
+            console.warn('Failed to parse emotionalIndicators as JSON, setting to empty array:', parseError.message);
+            result.emotionalIndicators = [];
+          }
+        }
+        
+        // Ensure emotionalIndicators is an array
+        if (!Array.isArray(result.emotionalIndicators)) {
+          console.warn('emotionalIndicators is not an array, setting to empty array');
+          result.emotionalIndicators = [];
+        }
+        
+        // Validate each emotional indicator has the required structure
+        result.emotionalIndicators = result.emotionalIndicators.filter(indicator => {
+          return indicator && typeof indicator === 'object' && 
+                 typeof indicator.indicator === 'string' &&
+                 typeof indicator.type === 'string' &&
+                 typeof indicator.context === 'string';
+        });
+        
+        console.log('Extracted sentiment JSON:', result);
+        
+      } catch (parseError) {
+        console.error('JSON parsing failed:', parseError);
+        console.error('Raw content:', content);
+        throw new Error(`Failed to parse OpenAI response: ${parseError.message}`);
+      }
       
       console.log('✅ OpenAI enhanced sentiment analysis completed');
       
@@ -343,7 +384,52 @@ class OpenAIService {
         max_tokens: 2500
       });
 
-      const result = JSON.parse(response.choices[0].message.content);
+      const content = response.choices[0].message.content;
+      console.log('Raw OpenAI key insights response:', content);
+      
+      // Improved JSON extraction and parsing
+      let result;
+      try {
+        // First try to find JSON in the response
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No JSON found in OpenAI response');
+        }
+        
+        const jsonString = jsonMatch[0];
+        result = JSON.parse(jsonString);
+        
+        // Ensure keyInsights is an array
+        if (!Array.isArray(result.keyInsights)) {
+          console.warn('keyInsights is not an array, setting to empty array');
+          result.keyInsights = [];
+        }
+        
+        // Validate each key insight has the required structure
+        result.keyInsights = result.keyInsights.filter(insight => {
+          return insight && typeof insight === 'object' && 
+                 typeof insight.insight === 'string';
+        });
+        
+        // Ensure actionItems is an array
+        if (!Array.isArray(result.actionItems)) {
+          console.warn('actionItems is not an array, setting to empty array');
+          result.actionItems = [];
+        }
+        
+        // Validate each action item has the required structure
+        result.actionItems = result.actionItems.filter(item => {
+          return item && typeof item === 'object' && 
+                 typeof item.item === 'string';
+        });
+        
+        console.log('Extracted key insights JSON:', result);
+        
+      } catch (parseError) {
+        console.error('JSON parsing failed:', parseError);
+        console.error('Raw content:', content);
+        throw new Error(`Failed to parse OpenAI response: ${parseError.message}`);
+      }
       
       console.log('✅ OpenAI enhanced key insights extraction completed');
       

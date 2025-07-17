@@ -277,17 +277,22 @@ async function processAIAnalysis(transcriptId) {
     // Update transcript with AI analysis results
     await Transcript.findByIdAndUpdate(transcriptId, {
       sentimentAnalysis: {
-        overall: sentimentResult.overall,
-        score: sentimentResult.score,
-        details: sentimentResult.details,
-        explanations: sentimentResult.explanations,
-        emotionalIndicators: sentimentResult.emotionalIndicators,
-        confidence: sentimentResult.confidence,
-        sentimentTrends: sentimentResult.sentimentTrends,
-        contextFactors: sentimentResult.contextFactors
+        overall: sentimentResult.overall || 'neutral',
+        score: sentimentResult.score || 0,
+        details: sentimentResult.details || { positive: 0, negative: 0, neutral: 0 },
+        explanations: sentimentResult.explanations || { positive: '', negative: '', neutral: '' },
+        emotionalIndicators: Array.isArray(sentimentResult.emotionalIndicators) ? sentimentResult.emotionalIndicators : [],
+        confidence: sentimentResult.confidence || 0,
+        sentimentTrends: Array.isArray(sentimentResult.sentimentTrends) ? sentimentResult.sentimentTrends : [],
+        contextFactors: sentimentResult.contextFactors || {
+          medicalConcerns: [],
+          businessOpportunities: [],
+          personalRapport: 'neutral',
+          professionalTone: 'formal'
+        }
       },
-      keyInsights: insightsResult.keyInsights || [],
-      actionItems: insightsResult.actionItems || []
+      keyInsights: Array.isArray(insightsResult.keyInsights) ? insightsResult.keyInsights : [],
+      actionItems: Array.isArray(insightsResult.actionItems) ? insightsResult.actionItems : []
     });
 
     console.log(`✅ AI analysis completed for transcript: ${transcriptId}`);
