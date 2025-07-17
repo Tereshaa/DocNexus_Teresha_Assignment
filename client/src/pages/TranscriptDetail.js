@@ -595,7 +595,7 @@ const TranscriptDetail = () => {
           <Grid item xs={12} md={6}>
             <Card>
               <CardContent>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 700, color: 'primary.main', mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: 'primary.main', mb: 1 }}>
                   Key Insights
                 </Typography>
                 <List sx={{ pl: 2, mb: 2 }}>

@@ -281,7 +281,7 @@ const Analytics = () => {
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
+              <Typography variant="h6" sx={{ mb: 1 }}>
                 Key Insights
               </Typography>
               <List>
