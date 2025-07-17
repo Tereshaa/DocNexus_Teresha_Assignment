@@ -274,6 +274,33 @@ async function processAIAnalysis(transcriptId) {
       throw new Error(`Insights extraction failed: ${insightsResult.error}`);
     }
 
+    // Normalize emotionalIndicators to always be an array of objects
+    let normalizedIndicators = [];
+    if (sentimentResult.emotionalIndicators) {
+      if (typeof sentimentResult.emotionalIndicators === 'string') {
+        try {
+          normalizedIndicators = JSON.parse(sentimentResult.emotionalIndicators);
+        } catch (e) {
+          // Try to eval as JS array if JSON.parse fails
+          try {
+            normalizedIndicators = eval(sentimentResult.emotionalIndicators);
+          } catch (e2) {
+            normalizedIndicators = [];
+          }
+        }
+      } else if (Array.isArray(sentimentResult.emotionalIndicators)) {
+        normalizedIndicators = sentimentResult.emotionalIndicators;
+      }
+      // Ensure array of objects with required fields
+      if (!Array.isArray(normalizedIndicators)) normalizedIndicators = [];
+      normalizedIndicators = normalizedIndicators.filter(ind =>
+        ind && typeof ind === 'object' &&
+        typeof ind.indicator === 'string' &&
+        typeof ind.type === 'string' &&
+        typeof ind.context === 'string'
+      );
+    }
+
     // Update transcript with AI analysis results
     await Transcript.findByIdAndUpdate(transcriptId, {
       sentimentAnalysis: {
@@ -281,7 +308,7 @@ async function processAIAnalysis(transcriptId) {
         score: sentimentResult.score || 0,
         details: sentimentResult.details || { positive: 0, negative: 0, neutral: 0 },
         explanations: sentimentResult.explanations || { positive: '', negative: '', neutral: '' },
-        emotionalIndicators: Array.isArray(sentimentResult.emotionalIndicators) ? sentimentResult.emotionalIndicators : [],
+        emotionalIndicators: normalizedIndicators,
         confidence: sentimentResult.confidence || 0,
         sentimentTrends: Array.isArray(sentimentResult.sentimentTrends) ? sentimentResult.sentimentTrends : [],
         contextFactors: sentimentResult.contextFactors || {

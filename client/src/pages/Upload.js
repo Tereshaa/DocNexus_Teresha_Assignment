@@ -169,16 +169,23 @@ const Upload = () => {
             try {
               const res = await api.get(`/transcripts/${id}`);
               const t = res.data?.data || res.data?.transcript;
-              
+              // Check for all required AI analysis fields
+              const aiReady = t &&
+                t.transcriptionStatus === 'completed' &&
+                Array.isArray(t.keyInsights) && t.keyInsights.length > 0 &&
+                Array.isArray(t.actionItems) && t.actionItems.length > 0 &&
+                t.sentimentAnalysis && (
+                  (Array.isArray(t.sentimentAnalysis.emotionalIndicators) && t.sentimentAnalysis.emotionalIndicators.length > 0) ||
+                  (typeof t.sentimentAnalysis.overall === 'string' && t.sentimentAnalysis.overall.length > 0)
+                );
               console.log(`📊 Poll attempt ${i + 1}/${retries}:`, {
                 status: t?.transcriptionStatus,
                 hasInsights: Array.isArray(t?.keyInsights) && t.keyInsights.length > 0,
-                hasActions: Array.isArray(t?.actionItems) && t.actionItems.length > 0
+                hasActions: Array.isArray(t?.actionItems) && t.actionItems.length > 0,
+                hasSentiment: !!t?.sentimentAnalysis
               });
-              
-              // Check if transcript is completed and has basic content
-              if (t && t.transcriptionStatus === 'completed' && (t.rawTranscript || t.editedTranscript)) {
-                console.log('✅ Transcript is ready for editing');
+              if (aiReady) {
+                console.log('✅ Transcript and all AI analysis are ready');
                 return true;
               }
               
