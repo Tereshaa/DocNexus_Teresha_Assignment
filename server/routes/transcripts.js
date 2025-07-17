@@ -409,69 +409,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-/**
- * POST /api/transcripts/:id/edit
- * Edit transcript with medical terminology validation
- */
-router.post('/:id/edit', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { editedTranscript } = req.body;
-    
-    if (!editedTranscript) {
-      return res.status(400).json({
-        success: false,
-        error: 'Edited transcript text is required'
-      });
-    }
 
-    // Find transcript
-    const transcript = await Transcript.findById(id);
-    
-    if (!transcript) {
-      return res.status(404).json({
-        success: false,
-        error: 'Transcript not found'
-      });
-    }
-
-    // Validate medical terminology
-    const validationResult = await openaiService.validateMedicalTerminology(editedTranscript);
-    
-    if (!validationResult.success) {
-      return res.status(500).json({
-        success: false,
-        error: `Medical terminology validation failed: ${validationResult.error}`
-      });
-    }
-
-    // Update transcript
-    const updatedTranscript = await Transcript.findByIdAndUpdate(
-      id,
-      {
-        editedTranscript: editedTranscript,
-        transcriptionStatus: 'edited'
-      },
-      { new: true }
-    );
-
-    console.log(`✅ Transcript edited: ${id}`);
-
-    res.json({
-      success: true,
-      data: updatedTranscript,
-      validation: validationResult,
-      message: 'Transcript edited successfully'
-    });
-
-  } catch (error) {
-    console.error('❌ Edit transcript failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
 
 /**
  * POST /api/transcripts/:id/reanalyze

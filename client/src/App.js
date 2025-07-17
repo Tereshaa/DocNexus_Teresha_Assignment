@@ -10,7 +10,7 @@ import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import Transcripts from './pages/Transcripts';
 import TranscriptDetail from './pages/TranscriptDetail';
-import TranscriptEditor from './pages/TranscriptEditor';
+
 import Analytics from './pages/Analytics';
 import CRM from './pages/CRM';
 import Documents from './pages/Documents';
@@ -29,7 +29,7 @@ function App() {
               <Route path="/upload" element={<Upload />} />
               <Route path="/transcripts" element={<Transcripts />} />
               <Route path="/transcripts/:id" element={<TranscriptDetail />} />
-              <Route path="/transcripts/:id/edit" element={<TranscriptEditor />} />
+
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/crm" element={<CRM />} />
               <Route path="/documents" element={<Documents />} />

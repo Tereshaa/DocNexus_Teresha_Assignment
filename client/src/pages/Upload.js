@@ -201,8 +201,8 @@ const Upload = () => {
         const doRedirect = async () => {
           const ready = await checkTranscriptReady(response.data.transcriptId);
           if (ready) {
-            console.log('🚀 Redirecting to transcript editor');
-            navigate(`/transcripts/${response.data.transcriptId}/edit`);
+            console.log('🚀 Redirecting to transcript detail');
+            navigate(`/transcripts/${response.data.transcriptId}`);
           } else {
             console.log('⚠️ Transcript processing timeout');
             setSuccessMessage('Transcript processing took too long. You can check the transcript list or try again.');
