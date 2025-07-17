@@ -455,23 +455,125 @@ router.post('/:id/reanalyze', async (req, res) => {
       throw new Error(`Insights extraction failed: ${insightsResult.error}`);
     }
 
+    // Normalize emotionalIndicators to always be an array of objects (same logic as upload route)
+    console.log('🔍 Re-analysis: Raw emotionalIndicators from OpenAI:', sentimentResult.emotionalIndicators);
+    console.log('🔍 Re-analysis: Type of emotionalIndicators:', typeof sentimentResult.emotionalIndicators);
+    
+    let normalizedIndicators = [];
+    if (sentimentResult.emotionalIndicators) {
+      if (typeof sentimentResult.emotionalIndicators === 'string') {
+        console.log('🔍 Re-analysis: emotionalIndicators is a string, attempting to parse...');
+        try {
+          normalizedIndicators = JSON.parse(sentimentResult.emotionalIndicators);
+          console.log('✅ Re-analysis: JSON.parse successful:', normalizedIndicators);
+        } catch (e) {
+          console.log('❌ Re-analysis: JSON.parse failed, trying eval...');
+          try {
+            normalizedIndicators = eval(sentimentResult.emotionalIndicators);
+            console.log('✅ Re-analysis: eval successful:', normalizedIndicators);
+          } catch (e2) {
+            console.log('❌ Re-analysis: eval also failed, setting to empty array');
+            normalizedIndicators = [];
+          }
+        }
+      } else if (Array.isArray(sentimentResult.emotionalIndicators)) {
+        console.log('✅ Re-analysis: emotionalIndicators is already an array');
+        normalizedIndicators = sentimentResult.emotionalIndicators;
+      } else {
+        console.log('❌ Re-analysis: emotionalIndicators is neither string nor array, setting to empty array');
+        normalizedIndicators = [];
+      }
+      
+      if (!Array.isArray(normalizedIndicators)) {
+        console.log('❌ Re-analysis: normalizedIndicators is not an array after processing, setting to empty array');
+        normalizedIndicators = [];
+      } else {
+        console.log('🔍 Re-analysis: Filtering normalizedIndicators for valid objects...');
+        normalizedIndicators = normalizedIndicators.filter(ind => {
+          const isValid = ind && typeof ind === 'object' &&
+                         typeof ind.indicator === 'string' &&
+                         typeof ind.type === 'string' &&
+                         typeof ind.context === 'string';
+          if (!isValid) {
+            console.log('❌ Re-analysis: Invalid indicator object:', ind);
+          }
+          return isValid;
+        });
+        console.log('✅ Re-analysis: Final normalizedIndicators:', normalizedIndicators);
+      }
+    } else {
+      console.log('❌ Re-analysis: No emotionalIndicators found in sentimentResult');
+    }
+    
+    // Final safety check
+    if (!Array.isArray(normalizedIndicators)) {
+      console.log('❌ Re-analysis: CRITICAL: normalizedIndicators is not an array, forcing to empty array');
+      normalizedIndicators = [];
+    }
+    
     // Log the sentimentResult for debugging
     console.log('SENTIMENT RESULT:', JSON.stringify(sentimentResult, null, 2));
+    
     // Update transcript with new analysis
-    const updatedTranscript = await Transcript.findByIdAndUpdate(
-      id,
-      {
-        sentimentAnalysis: {
-          overall: sentimentResult.overall,
-          score: sentimentResult.score,
-          details: sentimentResult.details,
-          explanations: sentimentResult.explanations // <-- add explanations
-        },
-        keyInsights: insightsResult.keyInsights || [],
-        actionItems: insightsResult.actionItems || []
+    const updateData = {
+      sentimentAnalysis: {
+        overall: sentimentResult.overall || 'neutral',
+        score: sentimentResult.score || 0,
+        details: sentimentResult.details || { positive: 0, negative: 0, neutral: 0 },
+        explanations: sentimentResult.explanations || { positive: '', negative: '', neutral: '' },
+        emotionalIndicators: normalizedIndicators,
+        confidence: sentimentResult.confidence || 0,
+        sentimentTrends: Array.isArray(sentimentResult.sentimentTrends) ? sentimentResult.sentimentTrends : [],
+        contextFactors: sentimentResult.contextFactors || {
+          medicalConcerns: [],
+          businessOpportunities: [],
+          personalRapport: 'neutral',
+          professionalTone: 'formal'
+        }
       },
-      { new: true }
-    );
+      keyInsights: Array.isArray(insightsResult.keyInsights) ? insightsResult.keyInsights : [],
+      actionItems: Array.isArray(insightsResult.actionItems) ? insightsResult.actionItems : []
+    };
+    
+    console.log('🔍 Re-analysis: Final update data emotionalIndicators:', updateData.sentimentAnalysis.emotionalIndicators);
+    
+    let updatedTranscript;
+    try {
+      updatedTranscript = await Transcript.findByIdAndUpdate(
+        id,
+        updateData,
+        { new: true }
+      );
+      console.log('✅ Re-analysis: Database update successful');
+    } catch (dbError) {
+      console.error('❌ Re-analysis: Database update failed:', dbError);
+      console.error('❌ Re-analysis: Error details:', {
+        message: dbError.message,
+        name: dbError.name,
+        code: dbError.code
+      });
+      
+      // Try to save with empty emotionalIndicators as fallback
+      try {
+        console.log('🔄 Re-analysis: Attempting fallback save with empty emotionalIndicators...');
+        const fallbackData = {
+          ...updateData,
+          sentimentAnalysis: {
+            ...updateData.sentimentAnalysis,
+            emotionalIndicators: []
+          }
+        };
+        updatedTranscript = await Transcript.findByIdAndUpdate(
+          id,
+          fallbackData,
+          { new: true }
+        );
+        console.log('✅ Re-analysis: Fallback save successful');
+      } catch (fallbackError) {
+        console.error('❌ Re-analysis: Fallback save also failed:', fallbackError);
+        throw fallbackError;
+      }
+    }
 
     console.log(`✅ Transcript re-analyzed: ${id}`);
 

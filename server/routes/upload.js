@@ -275,34 +275,72 @@ async function processAIAnalysis(transcriptId) {
     }
 
     // Normalize emotionalIndicators to always be an array of objects
+    console.log('🔍 Raw emotionalIndicators from OpenAI:', sentimentResult.emotionalIndicators);
+    console.log('🔍 Type of emotionalIndicators:', typeof sentimentResult.emotionalIndicators);
+    
     let normalizedIndicators = [];
     if (sentimentResult.emotionalIndicators) {
       if (typeof sentimentResult.emotionalIndicators === 'string') {
+        console.log('🔍 emotionalIndicators is a string, attempting to parse...');
         try {
+          // First try JSON.parse
           normalizedIndicators = JSON.parse(sentimentResult.emotionalIndicators);
+          console.log('✅ JSON.parse successful:', normalizedIndicators);
         } catch (e) {
-          // Try to eval as JS array if JSON.parse fails
+          console.log('❌ JSON.parse failed, trying eval...');
           try {
+            // Try to eval as JS array if JSON.parse fails
             normalizedIndicators = eval(sentimentResult.emotionalIndicators);
+            console.log('✅ eval successful:', normalizedIndicators);
           } catch (e2) {
+            console.log('❌ eval also failed, setting to empty array');
             normalizedIndicators = [];
           }
         }
       } else if (Array.isArray(sentimentResult.emotionalIndicators)) {
+        console.log('✅ emotionalIndicators is already an array');
         normalizedIndicators = sentimentResult.emotionalIndicators;
+      } else {
+        console.log('❌ emotionalIndicators is neither string nor array, setting to empty array');
+        normalizedIndicators = [];
       }
+      
       // Ensure array of objects with required fields
-      if (!Array.isArray(normalizedIndicators)) normalizedIndicators = [];
-      normalizedIndicators = normalizedIndicators.filter(ind =>
-        ind && typeof ind === 'object' &&
-        typeof ind.indicator === 'string' &&
-        typeof ind.type === 'string' &&
-        typeof ind.context === 'string'
-      );
+      if (!Array.isArray(normalizedIndicators)) {
+        console.log('❌ normalizedIndicators is not an array after processing, setting to empty array');
+        normalizedIndicators = [];
+      } else {
+        console.log('🔍 Filtering normalizedIndicators for valid objects...');
+        normalizedIndicators = normalizedIndicators.filter(ind => {
+          const isValid = ind && typeof ind === 'object' &&
+                         typeof ind.indicator === 'string' &&
+                         typeof ind.type === 'string' &&
+                         typeof ind.context === 'string';
+          if (!isValid) {
+            console.log('❌ Invalid indicator object:', ind);
+          }
+          return isValid;
+        });
+        console.log('✅ Final normalizedIndicators:', normalizedIndicators);
+      }
+    } else {
+      console.log('❌ No emotionalIndicators found in sentimentResult');
     }
 
+    // Final safety check before saving
+    console.log('🔍 Final safety check before saving to database...');
+    console.log('🔍 normalizedIndicators type:', typeof normalizedIndicators);
+    console.log('🔍 normalizedIndicators isArray:', Array.isArray(normalizedIndicators));
+    console.log('🔍 normalizedIndicators value:', normalizedIndicators);
+    
+    // Ensure normalizedIndicators is always a valid array
+    if (!Array.isArray(normalizedIndicators)) {
+      console.log('❌ CRITICAL: normalizedIndicators is not an array, forcing to empty array');
+      normalizedIndicators = [];
+    }
+    
     // Update transcript with AI analysis results
-    await Transcript.findByIdAndUpdate(transcriptId, {
+    const updateData = {
       sentimentAnalysis: {
         overall: sentimentResult.overall || 'neutral',
         score: sentimentResult.score || 0,
@@ -320,7 +358,38 @@ async function processAIAnalysis(transcriptId) {
       },
       keyInsights: Array.isArray(insightsResult.keyInsights) ? insightsResult.keyInsights : [],
       actionItems: Array.isArray(insightsResult.actionItems) ? insightsResult.actionItems : []
-    });
+    };
+    
+    console.log('🔍 Final update data emotionalIndicators:', updateData.sentimentAnalysis.emotionalIndicators);
+    
+    try {
+      await Transcript.findByIdAndUpdate(transcriptId, updateData);
+      console.log('✅ Database update successful');
+    } catch (dbError) {
+      console.error('❌ Database update failed:', dbError);
+      console.error('❌ Error details:', {
+        message: dbError.message,
+        name: dbError.name,
+        code: dbError.code
+      });
+      
+      // Try to save with empty emotionalIndicators as fallback
+      try {
+        console.log('🔄 Attempting fallback save with empty emotionalIndicators...');
+        const fallbackData = {
+          ...updateData,
+          sentimentAnalysis: {
+            ...updateData.sentimentAnalysis,
+            emotionalIndicators: []
+          }
+        };
+        await Transcript.findByIdAndUpdate(transcriptId, fallbackData);
+        console.log('✅ Fallback save successful');
+      } catch (fallbackError) {
+        console.error('❌ Fallback save also failed:', fallbackError);
+        throw fallbackError;
+      }
+    }
 
     console.log(`✅ AI analysis completed for transcript: ${transcriptId}`);
 
