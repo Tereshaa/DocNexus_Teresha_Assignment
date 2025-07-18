@@ -1,13 +1,8 @@
 const express = require('express');
 const crmService = require('../services/crmService');
 const Transcript = require('../models/Transcript');
-const fs = require('fs');
-const path = require('path');
 
 const router = express.Router();
-
-// Path to settings file
-const SETTINGS_PATH = path.join(__dirname, '../crm-settings.json');
 
 /**
  * POST /api/crm/sync
@@ -55,35 +50,16 @@ router.post('/sync', async (req, res) => {
     
     const syncResult = await crmService.syncToCRM(transcript, preferredCRM);
     console.log('🔄 Sync result:', syncResult);
-    
     if (syncResult.success) {
-      // Update transcript with sync status
-      await Transcript.findByIdAndUpdate(transcriptId, {
-        crmSyncStatus: 'synced',
-        crmSyncDate: new Date(),
-        crmRecordId: syncResult.recordId
-      });
-
-      console.log(`✅ CRM sync completed for transcript: ${transcriptId}`);
-      
-      res.json({
-        success: true,
-        message: 'Data synced to CRM successfully',
-        data: syncResult
-      });
+      transcript.crmSyncStatus = 'synced';
+      transcript.crmRecordId = syncResult.recordId || null;
+      transcript.crmSyncDate = new Date();
+      await transcript.save();
     } else {
-      // Update transcript with failed status
-      await Transcript.findByIdAndUpdate(transcriptId, {
-        crmSyncStatus: 'failed'
-      });
-
-      res.status(500).json({
-        success: false,
-        error: syncResult.error || 'Failed to sync to CRM',
-        data: syncResult
-      });
+      transcript.crmSyncStatus = 'failed';
+      await transcript.save();
     }
-
+    res.json(syncResult);
   } catch (error) {
     console.error('❌ CRM sync failed:', error);
     res.status(500).json({
@@ -162,11 +138,10 @@ router.post('/batch-sync', async (req, res) => {
         
         if (syncResult.success) {
           // Update transcript
-          await Transcript.findByIdAndUpdate(transcriptId, {
-            crmSyncStatus: 'synced',
-            crmSyncDate: new Date(),
-            crmRecordId: syncResult.recordId
-          });
+          transcript.crmSyncStatus = 'synced';
+          transcript.crmRecordId = syncResult.recordId || null;
+          transcript.crmSyncDate = new Date();
+          await transcript.save();
 
           results.push({
             transcriptId,
@@ -175,9 +150,8 @@ router.post('/batch-sync', async (req, res) => {
           });
         } else {
           // Update transcript with failed status
-          await Transcript.findByIdAndUpdate(transcriptId, {
-            crmSyncStatus: 'failed'
-          });
+          transcript.crmSyncStatus = 'failed';
+          await transcript.save();
 
           errors.push({
             transcriptId,
@@ -271,7 +245,6 @@ router.get('/status/:transcriptId', async (req, res) => {
 router.get('/status', async (req, res) => {
   try {
     console.log('📊 Getting CRM status and statistics...');
-    
     // Test Salesforce connection
     const salesforceResult = await crmService.initializeSalesforce();
     console.log('🔗 Salesforce connection result:', {
@@ -279,26 +252,20 @@ router.get('/status', async (req, res) => {
       instanceUrl: salesforceResult.instanceUrl,
       error: salesforceResult.error
     });
-    
     // Get sync statistics from database
-    const Transcript = require('../models/Transcript');
     const totalTranscripts = await Transcript.countDocuments();
     const syncedTranscripts = await Transcript.countDocuments({ crmSyncStatus: 'synced' });
     const pendingTranscripts = await Transcript.countDocuments({ crmSyncStatus: 'pending' });
     const failedTranscripts = await Transcript.countDocuments({ crmSyncStatus: 'failed' });
-    
     // Get last sync date
     const lastSynced = await Transcript.findOne({ crmSyncStatus: 'synced' })
       .sort({ crmSyncDate: -1 })
       .select('crmSyncDate');
-    
     const successRate = totalTranscripts > 0 ? Math.round((syncedTranscripts / totalTranscripts) * 100) : 0;
-    
     // Get all transcripts for sync status
     const allTranscripts = await Transcript.find({})
       .select('originalFileName hcpName hcpSpecialty crmSyncStatus crmSyncDate _id')
       .sort({ createdAt: -1 });
-    
     // Format sync status data
     const syncStatus = allTranscripts.map(transcript => ({
       transcriptId: transcript._id,
@@ -308,7 +275,6 @@ router.get('/status', async (req, res) => {
       syncStatus: transcript.crmSyncStatus || 'pending',
       lastSync: transcript.crmSyncDate || null
     }));
-    
     // Get pending syncs (transcripts that haven't been synced)
     const pendingSyncs = allTranscripts
       .filter(t => !t.crmSyncStatus || t.crmSyncStatus === 'pending')
@@ -319,7 +285,6 @@ router.get('/status', async (req, res) => {
         specialty: transcript.hcpSpecialty || 'Unknown',
         syncStatus: transcript.crmSyncStatus || 'pending'
       }));
-    
     // Get unique HCPs for HCP management
     const hcps = await Transcript.aggregate([
       {
@@ -341,7 +306,6 @@ router.get('/status', async (req, res) => {
         $sort: { lastMeeting: -1 }
       }
     ]);
-    
     const responseData = {
       success: true,
       data: {
@@ -362,7 +326,6 @@ router.get('/status', async (req, res) => {
         hcps: hcps
       }
     };
-    
     console.log('📊 CRM status response:', {
       salesforceConnected: responseData.data.salesforce.connected,
       totalTranscripts,
@@ -372,10 +335,9 @@ router.get('/status', async (req, res) => {
       pendingSyncsCount: pendingSyncs.length,
       hcpsCount: hcps.length
     });
-    
     res.json(responseData);
   } catch (error) {
-    console.error('❌ Get CRM status failed:', error);
+    console.error('❌ CRM status check failed:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -395,18 +357,12 @@ router.get('/hcp/:hcpName', async (req, res) => {
     console.log(`🔍 Searching for HCP: ${hcpName} in CRM systems`);
     
     const results = {
-      salesforce: null,
-      veeva: null
+      salesforce: null
     };
 
     // Search in Salesforce
     if (crm === 'salesforce' || crm === 'both') {
       results.salesforce = await crmService.getHCPFromSalesforce(hcpName);
-    }
-
-    // Search in Veeva
-    if (crm === 'veeva' || crm === 'both') {
-      results.veeva = await crmService.getHCPFromVeeva(hcpName);
     }
 
     res.json({
@@ -426,49 +382,27 @@ router.get('/hcp/:hcpName', async (req, res) => {
 
 /**
  * POST /api/crm/initialize
- * Initialize CRM connections
+ * Initialize CRM connections (Salesforce only)
  */
 router.post('/initialize', async (req, res) => {
   try {
-    const { crm = 'both' } = req.body;
-    
-    console.log('🔗 Initializing CRM connections...');
-    
-    const results = {
-      salesforce: null,
-      veeva: null
-    };
-
-    // Initialize Salesforce
-    if (crm === 'salesforce' || crm === 'both') {
-      results.salesforce = await crmService.initializeSalesforce();
-    }
-
-    // Initialize Veeva
-    if (crm === 'veeva' || crm === 'both') {
-      results.veeva = await crmService.initializeVeeva();
-    }
-
-    const overallSuccess = (results.salesforce && results.salesforce.success) || 
-                          (results.veeva && results.veeva.success);
-
-    if (overallSuccess) {
-      console.log('✅ CRM connections initialized');
+    console.log('🔗 Initializing Salesforce connection...');
+    const salesforceResult = await crmService.initializeSalesforce();
+    if (salesforceResult.success) {
       res.json({
         success: true,
-        message: 'CRM connections initialized successfully',
-        data: results
+        message: 'Salesforce connection initialized successfully',
+        data: salesforceResult
       });
     } else {
       res.status(500).json({
         success: false,
-        error: 'Failed to initialize CRM connections',
-        data: results
+        error: 'Failed to initialize Salesforce connection',
+        data: salesforceResult
       });
     }
-
   } catch (error) {
-    console.error('❌ CRM initialization failed:', error);
+    console.error('❌ Salesforce initialization failed:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -478,44 +412,26 @@ router.post('/initialize', async (req, res) => {
 
 /**
  * GET /api/crm/health
- * Check CRM service health
+ * Check CRM service health (Salesforce only)
  */
 router.get('/health', async (req, res) => {
   try {
-    console.log('🏥 Checking CRM service health...');
-    
-    const healthStatus = {
-      salesforce: 'unknown',
-      veeva: 'unknown',
-      timestamp: new Date().toISOString()
-    };
-
-    // Test Salesforce connection
+    console.log('🏥 Checking Salesforce service health...');
+    let healthStatus = 'unknown';
     try {
       const sfResult = await crmService.initializeSalesforce();
-      healthStatus.salesforce = sfResult.success ? 'connected' : 'error';
+      healthStatus = sfResult.success ? 'connected' : 'error';
     } catch (error) {
-      healthStatus.salesforce = 'error';
+      healthStatus = 'error';
     }
-
-    // Test Veeva connection
-    try {
-      const veevaResult = await crmService.initializeVeeva();
-      healthStatus.veeva = veevaResult.success ? 'connected' : 'error';
-    } catch (error) {
-      healthStatus.veeva = 'error';
-    }
-
-    const overallHealth = healthStatus.salesforce === 'connected' || healthStatus.veeva === 'connected';
-
     res.json({
-      success: overallHealth,
-      status: overallHealth ? 'healthy' : 'unhealthy',
-      data: healthStatus
+      success: healthStatus === 'connected',
+      status: healthStatus === 'connected' ? 'healthy' : 'unhealthy',
+      salesforce: healthStatus,
+      timestamp: new Date().toISOString()
     });
-
   } catch (error) {
-    console.error('❌ CRM health check failed:', error);
+    console.error('❌ Salesforce health check failed:', error);
     res.status(500).json({
       success: false,
       status: 'unhealthy',
@@ -635,19 +551,14 @@ router.get('/tasks', async (req, res) => {
 router.get('/test-connection', async (req, res) => {
   try {
     const { type } = req.query;
-    
     if (type !== 'salesforce') {
       return res.status(400).json({
         success: false,
         error: 'Only Salesforce is supported for connection testing'
       });
     }
-
     console.log('🔗 Testing Salesforce connection...');
-    
-    // Test the connection using environment variables
     const result = await crmService.initializeSalesforce();
-    
     if (result.success) {
       console.log('✅ Salesforce connection test successful');
       res.json({
@@ -681,19 +592,14 @@ router.get('/test-connection', async (req, res) => {
 router.post('/test-connection', async (req, res) => {
   try {
     const { type } = req.body;
-    
     if (type !== 'salesforce') {
       return res.status(400).json({
         success: false,
         error: 'Only Salesforce is supported for connection testing'
       });
     }
-
     console.log('🔗 Testing Salesforce connection...');
-    
-    // Test the connection using environment variables
     const result = await crmService.initializeSalesforce();
-    
     if (result.success) {
       console.log('✅ Salesforce connection test successful');
       res.json({
@@ -736,7 +642,6 @@ router.get('/config', async (req, res) => {
         loginUrl: process.env.SALESFORCE_LOGIN_URL || 'https://login.salesforce.com'
       }
     };
-    
     res.json({
       success: true,
       data: config

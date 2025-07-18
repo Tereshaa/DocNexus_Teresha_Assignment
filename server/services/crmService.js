@@ -225,51 +225,6 @@ class CRMService {
       };
     }
   }
-
-  /**
-   * Check existing Task records in Salesforce
-   * @returns {Promise<Object>} List of recent tasks
-   */
-  async checkExistingTasks() {
-    try {
-      console.log('🔍 Checking existing Task records in Salesforce...');
-      if (!this.salesforceConn) {
-        const initResult = await this.initializeSalesforce();
-        if (!initResult.success) {
-          throw new Error('Failed to initialize Salesforce connection');
-        }
-      }
-      
-      const query = `
-        SELECT Id, Subject, Description, Status, CreatedDate, ActivityDate
-        FROM Task
-        WHERE Subject LIKE '%Meeting with%'
-        ORDER BY CreatedDate DESC
-        LIMIT 10
-      `;
-      
-      const result = await this.salesforceConn.query(query);
-      console.log(`✅ Found ${result.records.length} meeting tasks in Salesforce`);
-      
-      return {
-        success: true,
-        tasks: result.records.map(task => ({
-          id: task.Id,
-          subject: task.Subject,
-          description: task.Description?.substring(0, 100) + '...',
-          status: task.Status,
-          createdDate: task.CreatedDate,
-          activityDate: task.ActivityDate
-        }))
-      };
-    } catch (error) {
-      console.error('❌ Check existing tasks failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
 }
 
 module.exports = new CRMService(); 
