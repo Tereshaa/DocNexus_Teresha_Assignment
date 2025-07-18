@@ -1,6 +1,6 @@
 const express = require('express');
-const Transcript = require('../models/Transcript');
 const openaiService = require('../services/openaiService');
+const Transcript = require('../models/Transcript');
 
 const router = express.Router();
 

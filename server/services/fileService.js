@@ -1,374 +1,419 @@
 const AWS = require('aws-sdk');
-const fs = require('fs');
 const path = require('path');
-const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
+
+// Check if AWS credentials are available
+const hasAWSCredentials = process.env.AWS_ACCESS_KEY_ID && 
+                         process.env.AWS_SECRET_ACCESS_KEY && 
+                         process.env.AWS_REGION && 
+                         process.env.AWS_S3_BUCKET;
+
+console.log('🔧 AWS Configuration Check:', {
+  hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+  hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+  hasRegion: !!process.env.AWS_REGION,
+  hasBucket: !!process.env.AWS_S3_BUCKET,
+  hasAllCredentials: hasAWSCredentials
+});
+
+// Only create S3 instance if all credentials are available
+let s3 = null;
+let BUCKET = null;
+
+if (hasAWSCredentials) {
+  try {
+    s3 = new AWS.S3({
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      region: process.env.AWS_REGION,
+    });
+    BUCKET = process.env.AWS_S3_BUCKET;
+    console.log('✅ S3 client initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize S3 client:', error);
+    s3 = null;
+    BUCKET = null;
+  }
+} else {
+  console.log('⚠️ S3 not configured - will use local storage fallback');
+}
 
 class FileService {
-  constructor() {
-    this.s3 = null;
-    this.bucketName = process.env.AWS_S3_BUCKET;
-    this.initializeS3();
-  }
-
   /**
-   * Initialize S3 client
-   */
-  initializeS3() {
-    if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && this.bucketName) {
-      this.s3 = new AWS.S3({
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        region: process.env.AWS_REGION || 'us-east-1'
-      });
-    } else {
-      console.warn('⚠️ S3 not configured - will use local storage fallback');
-    }
-  }
-
-  /**
-   * Upload file to S3 or local storage
-   * @param {Buffer} fileBuffer - File buffer
-   * @param {string} fileName - File name
-   * @param {string} folder - Folder path
+   * Upload file to S3
+   * @param {string} filePath - Local file path
+   * @param {string} fileName - Original file name
+   * @param {string} folder - S3 folder
+   * @param {object|null} req - Express request object (optional)
    * @returns {Promise<Object>} Upload result
    */
-  async uploadFile(fileBuffer, fileName, folder = 'uploads') {
+  async uploadFile(filePath, fileName, folder = 'uploads', req = null) {
+    const fs = require('fs');
     try {
-      if (this.s3 && this.bucketName) {
-        const key = `${folder}/${Date.now()}-${fileName}`;
-        const params = {
-          Bucket: this.bucketName,
-          Key: key,
-          Body: fileBuffer,
-          ContentType: this.getContentType(fileName),
-          ACL: 'public-read'
-        };
-
-        const result = await this.s3.upload(params).promise();
-        return {
-          success: true,
-          url: result.Location,
-          key: key,
-          storage: 's3'
-        };
-      } else {
-        return await this.uploadToLocalStorage(fileBuffer, fileName, folder);
+      // Check if S3 is configured
+      if (!s3 || !BUCKET) {
+        console.warn('⚠️ S3 not configured, using local storage fallback');
+        return this.uploadToLocalStorage(filePath, fileName, folder, req);
       }
+
+      const fileExtension = path.extname(fileName);
+      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const s3Key = `${folder}/${uniqueFileName}`;
+      const fileContent = fs.readFileSync(filePath);
+      const params = {
+        Bucket: BUCKET,
+        Key: s3Key,
+        Body: fileContent,
+        ContentType: this.getContentType(fileExtension),
+      };
+      await s3.upload(params).promise();
+      // Optionally delete local file after upload
+      fs.unlinkSync(filePath);
+      return {
+        success: true,
+        url: await this.getSignedUrl(s3Key),
+        key: s3Key,
+        originalName: fileName,
+        size: fileContent.length
+      };
     } catch (error) {
       console.error(`❌ S3 upload failed for ${fileName}:`, error);
-      return await this.uploadToLocalStorage(fileBuffer, fileName, folder);
+      console.log('🔄 Falling back to local storage...');
+      // Don't delete the original file since we're falling back to local storage
+      return this.uploadToLocalStorage(filePath, fileName, folder, req);
     }
   }
 
   /**
-   * Upload buffer to S3 or local storage
-   * @param {Buffer} buffer - Buffer to upload
+   * Upload buffer to S3
+   * @param {Buffer} buffer - File buffer
    * @param {string} fileName - File name
-   * @param {string} folder - Folder path
+   * @param {string} folder - S3 folder
+   * @param {object|null} req - Express request object (optional)
    * @returns {Promise<Object>} Upload result
    */
-  async uploadBuffer(buffer, fileName, folder = 'uploads') {
+  async uploadBuffer(buffer, fileName, folder = 'documents', req = null) {
     try {
-      if (this.s3 && this.bucketName) {
-        const key = `${folder}/${Date.now()}-${fileName}`;
-        const params = {
-          Bucket: this.bucketName,
-          Key: key,
-          Body: buffer,
-          ContentType: this.getContentType(fileName),
-          ACL: 'public-read'
-        };
-
-        const result = await this.s3.upload(params).promise();
-        return {
-          success: true,
-          url: result.Location,
-          key: key,
-          storage: 's3'
-        };
-      } else {
-        return await this.uploadBufferToLocalStorage(buffer, fileName, folder);
+      // Check if S3 is configured
+      if (!s3 || !BUCKET) {
+        console.warn('⚠️ S3 not configured, using local storage fallback for buffer');
+        return this.uploadBufferToLocalStorage(buffer, fileName, folder, req);
       }
+
+      const fileExtension = path.extname(fileName);
+      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const s3Key = `${folder}/${uniqueFileName}`;
+      const params = {
+        Bucket: BUCKET,
+        Key: s3Key,
+        Body: buffer,
+        ContentType: this.getContentType(fileExtension),
+      };
+      await s3.upload(params).promise();
+      return {
+        success: true,
+        url: await this.getSignedUrl(s3Key),
+        key: s3Key,
+        originalName: fileName,
+        size: buffer.length
+      };
     } catch (error) {
       console.error(`❌ S3 buffer upload failed for ${fileName}:`, error);
-      return await this.uploadBufferToLocalStorage(buffer, fileName, folder);
+      console.log('🔄 Falling back to local storage for buffer...');
+      return this.uploadBufferToLocalStorage(buffer, fileName, folder, req);
     }
   }
 
   /**
-   * Get file from S3 or local storage
-   * @param {string} key - File key
+   * Get a signed URL for a file in S3
+   * @param {string} key - S3 key
+   * @param {number} expires - Expiry in seconds (default 1 hour)
+   * @returns {Promise<string>} Signed URL
+   */
+  async getSignedUrl(key, expires = 3600) {
+    // If S3 is not configured, return a local file URL
+    if (!s3 || !BUCKET) {
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://docnexus-backend-teresha.onrender.com' 
+        : 'http://localhost:5000';
+      return `${baseUrl}/api/files/${key}`;
+    }
+
+    const signedUrl = await s3.getSignedUrlPromise('getObject', {
+      Bucket: BUCKET,
+      Key: key,
+      Expires: expires,
+    });
+    
+    // Force HTTPS for production URLs to avoid mixed content issues
+    if (process.env.NODE_ENV === 'production' && signedUrl.startsWith('http://')) {
+      return signedUrl.replace('http://', 'https://');
+    }
+    
+    return signedUrl;
+  }
+
+  /**
+   * Get file from S3 (returns buffer and metadata)
+   * @param {string} key - S3 key
    * @returns {Promise<Object>} File result
    */
   async getFile(key) {
     try {
-      if (this.s3 && this.bucketName) {
-        const params = {
-          Bucket: this.bucketName,
-          Key: key
-        };
-
-        const result = await this.s3.getObject(params).promise();
-        return {
-          success: true,
-          data: result.Body,
-          contentType: result.ContentType,
-          storage: 's3'
-        };
-      } else {
-        return await this.getFileFromLocalStorage(key);
+      // If S3 is not configured, read from local storage
+      if (!s3 || !BUCKET) {
+        return this.getFileFromLocalStorage(key);
       }
+
+      const params = {
+        Bucket: BUCKET,
+        Key: key,
+      };
+      const data = await s3.getObject(params).promise();
+      return {
+        success: true,
+        buffer: data.Body,
+        contentType: data.ContentType,
+        size: data.ContentLength,
+        metadata: data.Metadata
+      };
     } catch (error) {
       console.error(`❌ S3 file retrieval failed for ${key}:`, error);
-      return await this.getFileFromLocalStorage(key);
+      console.log('🔄 Falling back to local storage...');
+      return this.getFileFromLocalStorage(key);
     }
   }
 
   /**
-   * Delete file from S3 or local storage
-   * @param {string} key - File key
+   * Delete file from S3
+   * @param {string} key - S3 key
    * @returns {Promise<Object>} Delete result
    */
   async deleteFile(key) {
     try {
-      if (this.s3 && this.bucketName) {
-        const params = {
-          Bucket: this.bucketName,
-          Key: key
-        };
-
-        await this.s3.deleteObject(params).promise();
-        return {
-          success: true,
-          message: 'File deleted from S3',
-          storage: 's3'
-        };
-      } else {
-        return await this.deleteFileFromLocalStorage(key);
-      }
+      const params = {
+        Bucket: BUCKET,
+        Key: key,
+      };
+      await s3.deleteObject(params).promise();
+      return {
+        success: true,
+        message: 'File deleted successfully'
+      };
     } catch (error) {
       console.error(`❌ S3 file deletion failed for ${key}:`, error);
-      return await this.deleteFileFromLocalStorage(key);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * List files in S3 or local storage
-   * @param {string} folder - Folder path
+   * List files in S3 folder
+   * @param {string} folder - S3 folder
    * @returns {Promise<Object>} List result
    */
   async listFiles(folder = 'uploads') {
     try {
-      if (this.s3 && this.bucketName) {
-        const params = {
-          Bucket: this.bucketName,
-          Prefix: folder + '/'
-        };
-
-        const result = await this.s3.listObjectsV2(params).promise();
-        const files = result.Contents.map(item => ({
+      const params = {
+        Bucket: BUCKET,
+        Prefix: `${folder}/`,
+      };
+      const data = await s3.listObjectsV2(params).promise();
+      const files = await Promise.all(data.Contents.map(async (item) => {
+        return {
           key: item.Key,
+          name: path.basename(item.Key),
           size: item.Size,
           lastModified: item.LastModified,
-          url: `https://${this.bucketName}.s3.amazonaws.com/${item.Key}`
-        }));
-
-        return {
-          success: true,
-          files: files,
-          storage: 's3'
+          url: await this.getSignedUrl(item.Key)
         };
-      } else {
-        return await this.listFilesFromLocalStorage(folder);
-      }
-    } catch (error) {
-      console.error(`❌ S3 file listing failed for ${folder}:`, error);
-      return await this.listFilesFromLocalStorage(folder);
-    }
-  }
-
-  /**
-   * Upload file to local storage
-   * @param {Buffer} fileBuffer - File buffer
-   * @param {string} fileName - File name
-   * @param {string} folder - Folder path
-   * @returns {Promise<Object>} Upload result
-   */
-  async uploadToLocalStorage(fileBuffer, fileName, folder = 'uploads') {
-    try {
-      const uploadDir = path.join(__dirname, '..', folder);
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      const timestamp = Date.now();
-      const key = `${folder}/${timestamp}-${fileName}`;
-      const filePath = path.join(uploadDir, `${timestamp}-${fileName}`);
-
-      fs.writeFileSync(filePath, fileBuffer);
-      const localUrl = `/api/files/${key}`;
-
+      }));
       return {
         success: true,
-        url: localUrl,
-        key: key,
-        storage: 'local'
+        files: files
       };
     } catch (error) {
-      console.error(`❌ Local storage upload failed for ${fileName}:`, error);
-      throw error;
+      console.error(`❌ S3 file listing failed for ${folder}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Upload buffer to local storage
-   * @param {Buffer} buffer - Buffer to upload
-   * @param {string} fileName - File name
-   * @param {string} folder - Folder path
+   * Check if file exists in S3
+   * @param {string} key - S3 key
+   * @returns {Promise<boolean>} Exists result
+   */
+  async fileExists(key) {
+    try {
+      const params = {
+        Bucket: BUCKET,
+        Key: key,
+      };
+      await s3.headObject(params).promise();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Upload buffer to local storage (fallback when S3 is not available)
+   * @param {Buffer} buffer - File buffer
+   * @param {string} fileName - Original file name
+   * @param {string} folder - Storage folder
+   * @param {object|null} req - Express request object (optional)
    * @returns {Promise<Object>} Upload result
    */
-  async uploadBufferToLocalStorage(buffer, fileName, folder = 'uploads') {
+  async uploadBufferToLocalStorage(buffer, fileName, folder = 'documents', req = null) {
+    const fs = require('fs');
     try {
-      const uploadDir = path.join(__dirname, '..', folder);
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
+      const fileExtension = path.extname(fileName);
+      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const localFolder = path.join(__dirname, '..', folder);
+      
+      // Create folder if it doesn't exist
+      if (!fs.existsSync(localFolder)) {
+        fs.mkdirSync(localFolder, { recursive: true });
       }
-
-      const timestamp = Date.now();
-      const key = `${folder}/${timestamp}-${fileName}`;
-      const filePath = path.join(uploadDir, `${timestamp}-${fileName}`);
-
-      fs.writeFileSync(filePath, buffer);
-      const localUrl = `/api/files/${key}`;
-
+      
+      const localFilePath = path.join(localFolder, uniqueFileName);
+      
+      // Write buffer to local storage
+      fs.writeFileSync(localFilePath, buffer);
+      
+      // Generate local URL
+      const baseUrl = req ? `${req.protocol}://${req.get('host')}` : 'http://localhost:5000';
+      const localUrl = `${baseUrl}/api/files/${folder}/${uniqueFileName}`;
+      
+      console.log('✅ Buffer uploaded to local storage:', localUrl);
+      
       return {
         success: true,
         url: localUrl,
-        key: key,
-        storage: 'local'
+        key: `${folder}/${uniqueFileName}`,
+        originalName: fileName,
+        size: buffer.length
       };
     } catch (error) {
       console.error(`❌ Local storage buffer upload failed for ${fileName}:`, error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Get file from local storage
-   * @param {string} key - File key
+   * Get file from local storage (fallback when S3 is not available)
+   * @param {string} key - File key (folder/filename)
    * @returns {Promise<Object>} File result
    */
   async getFileFromLocalStorage(key) {
+    const fs = require('fs');
     try {
-      const filePath = path.join(__dirname, '..', key);
+      const localFilePath = path.join(__dirname, '..', key);
       
-      if (!fs.existsSync(filePath)) {
-        throw new Error('File not found');
+      if (!fs.existsSync(localFilePath)) {
+        return {
+          success: false,
+          error: 'File not found in local storage'
+        };
       }
-
-      const data = fs.readFileSync(filePath);
-      const contentType = this.getContentType(path.basename(key));
-
+      
+      const buffer = fs.readFileSync(localFilePath);
+      const fileExtension = path.extname(key);
+      
       return {
         success: true,
-        data: data,
-        contentType: contentType,
-        storage: 'local'
+        buffer: buffer,
+        contentType: this.getContentType(fileExtension),
+        size: buffer.length,
+        metadata: {}
       };
     } catch (error) {
       console.error(`❌ Local file retrieval failed for ${key}:`, error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Delete file from local storage
-   * @param {string} key - File key
-   * @returns {Promise<Object>} Delete result
+   * Upload file to local storage (fallback when S3 is not available)
+   * @param {string} filePath - Local file path
+   * @param {string} fileName - Original file name
+   * @param {string} folder - Storage folder
+   * @param {object|null} req - Express request object (optional)
+   * @returns {Promise<Object>} Upload result
    */
-  async deleteFileFromLocalStorage(key) {
+  async uploadToLocalStorage(filePath, fileName, folder = 'uploads', req = null) {
+    const fs = require('fs');
     try {
-      const filePath = path.join(__dirname, '..', key);
+      const fileExtension = path.extname(fileName);
+      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const localFolder = path.join(__dirname, '..', folder);
       
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      // Create folder if it doesn't exist
+      if (!fs.existsSync(localFolder)) {
+        fs.mkdirSync(localFolder, { recursive: true });
       }
-
+      
+      const localFilePath = path.join(localFolder, uniqueFileName);
+      
+      // Copy file to local storage (don't delete original since it's managed by multer)
+      fs.copyFileSync(filePath, localFilePath);
+      
+      // Generate local URL
+      const baseUrl = req ? `${req.protocol}://${req.get('host')}` : 'http://localhost:5000';
+      const localUrl = `${baseUrl}/api/files/${folder}/${uniqueFileName}`;
+      
+      console.log('✅ File uploaded to local storage:', localUrl);
+      
       return {
         success: true,
-        message: 'File deleted from local storage',
-        storage: 'local'
+        url: localUrl,
+        key: `${folder}/${uniqueFileName}`,
+        originalName: fileName,
+        size: fs.statSync(localFilePath).size
       };
     } catch (error) {
-      console.error(`❌ Local file deletion failed for ${key}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * List files from local storage
-   * @param {string} folder - Folder path
-   * @returns {Promise<Object>} List result
-   */
-  async listFilesFromLocalStorage(folder = 'uploads') {
-    try {
-      const folderPath = path.join(__dirname, '..', folder);
-      
-      if (!fs.existsSync(folderPath)) {
-        return {
-          success: true,
-          files: [],
-          storage: 'local'
-        };
-      }
-
-      const files = fs.readdirSync(folderPath)
-        .filter(file => !file.startsWith('.'))
-        .map(file => {
-          const filePath = path.join(folderPath, file);
-          const stats = fs.statSync(filePath);
-          return {
-            key: `${folder}/${file}`,
-            size: stats.size,
-            lastModified: stats.mtime,
-            url: `/api/files/${folder}/${file}`
-          };
-        });
-
+      console.error(`❌ Local storage upload failed for ${fileName}:`, error);
       return {
-        success: true,
-        files: files,
-        storage: 'local'
+        success: false,
+        error: error.message
       };
-    } catch (error) {
-      console.error(`❌ Local file listing failed for ${folder}:`, error);
-      throw error;
     }
   }
 
   /**
    * Get content type based on file extension
-   * @param {string} fileName - File name
+   * @param {string} extension - File extension
    * @returns {string} Content type
    */
-  getContentType(fileName) {
-    const ext = path.extname(fileName).toLowerCase();
+  getContentType(extension) {
     const contentTypes = {
       '.mp3': 'audio/mpeg',
-      '.wav': 'audio/wav',
       '.mp4': 'video/mp4',
+      '.wav': 'audio/wav',
+      '.m4a': 'audio/mp4',
       '.avi': 'video/x-msvideo',
       '.mov': 'video/quicktime',
-      '.mkv': 'video/x-matroska',
       '.pdf': 'application/pdf',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       '.ppt': 'application/vnd.ms-powerpoint',
       '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       '.txt': 'text/plain',
       '.json': 'application/json'
     };
-    return contentTypes[ext] || 'application/octet-stream';
+    return contentTypes[extension.toLowerCase()] || 'application/octet-stream';
   }
 }
 

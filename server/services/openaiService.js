@@ -14,442 +14,755 @@ class OpenAIService {
   }
 
   /**
-   * Transcribe audio/video file using OpenAI Whisper
-   * @param {string} filePath - Path to the audio/video file
+   * Transcribe audio or video file using OpenAI Whisper
+   * @param {string} filePath - Path to the audio or video file
+   * @param {string} language - Language code (optional)
    * @returns {Promise<Object>} Transcription result
    */
-  async transcribeFile(filePath) {
+  async transcribeAudio(filePath, language = 'en') {
+    let audioPath = filePath;
+    let tempAudioCreated = false;
+    const maxRetries = 2;
+    let attempt = 0;
+    const sleep = ms => new Promise(res => setTimeout(res, ms));
     try {
-      if (!process.env.OPENAI_API_KEY) {
-        throw new Error('OpenAI API key not configured');
-      }
-
-      if (!fs.existsSync(filePath)) {
-        throw new Error(`File not found: ${filePath}`);
-      }
-
-      // Check if file is video and extract audio
-      const fileExt = path.extname(filePath).toLowerCase();
-      const isVideo = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'].includes(fileExt);
+      console.log(`🎤 Starting OpenAI transcription for: ${filePath}`);
+      console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Present' : 'Missing'}`);
+      console.log(`📁 File exists: ${fs.existsSync(filePath)}`);
+      console.log(`📏 File size: ${fs.statSync(filePath).size} bytes`);
       
-      let audioPath = filePath;
-      
-      if (isVideo) {
-        audioPath = filePath.replace(fileExt, '.mp3');
-        await this.extractAudio(filePath, audioPath);
+      const ext = path.extname(filePath).toLowerCase();
+      const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv'];
+      // If video, extract audio
+      if (videoExtensions.includes(ext)) {
+        audioPath = filePath + '.mp3';
+        console.log(`🎬 Extracting audio from video to: ${audioPath}`);
+        await new Promise((resolve, reject) => {
+          ffmpeg(filePath)
+            .output(audioPath)
+            .audioCodec('libmp3lame')
+            .on('end', () => {
+              tempAudioCreated = true;
+              console.log(`✅ Audio extraction completed`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`❌ Audio extraction failed:`, err);
+              reject(err);
+            })
+            .run();
+        });
       }
-
-      const maxRetries = 3;
-      let lastError;
-
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
+      let lastError = null;
+      while (attempt < maxRetries) {
         try {
+          console.log(`🚀 Sending to OpenAI Whisper API... (attempt ${attempt + 1})`);
+          // If the OpenAI SDK supports timeout, set it here. Otherwise, rely on default.
           const transcription = await this.openai.audio.transcriptions.create({
             file: fs.createReadStream(audioPath),
             model: 'whisper-1',
+            language: language,
             response_format: 'verbose_json',
             timestamp_granularities: ['word']
           });
-
-          // Clean up extracted audio file if it was created
-          if (isVideo && fs.existsSync(audioPath)) {
-            fs.unlinkSync(audioPath);
-          }
-
+          console.log(`✅ OpenAI transcription completed for: ${filePath}`);
           return {
             success: true,
             text: transcription.text,
-            segments: transcription.segments,
+            confidence: transcription.confidence || 0,
             language: transcription.language,
-            duration: transcription.duration
+            duration: transcription.duration,
+            segments: transcription.segments || []
           };
         } catch (error) {
           lastError = error;
-          
-          if (attempt < maxRetries - 1) {
-            const wait = Math.pow(2, attempt) * 1000;
-            await new Promise(resolve => setTimeout(resolve, wait));
+          // Retry only on network errors
+          const isNetworkError = error.code === 'ECONNRESET' || error.message?.includes('ECONNRESET') || error.message?.includes('Connection error') || error.cause?.code === 'ECONNRESET';
+          console.error(`❌ OpenAI transcription failed (attempt ${attempt + 1}) for ${filePath}:`, error);
+          if (isNetworkError && attempt < maxRetries - 1) {
+            const wait = 1000 * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
+            console.log(`🔁 Retrying OpenAI transcription in ${wait / 1000}s...`);
+            await sleep(wait);
+            attempt++;
+            continue;
+          } else {
+            break;
           }
         }
       }
-
-      throw lastError;
-    } catch (error) {
-      console.error(`❌ OpenAI transcription failed for ${filePath}:`, error);
-      throw error;
+      // If we reach here, all attempts failed
+      console.error(`❌ OpenAI transcription failed after ${maxRetries} attempts for ${filePath}:`, lastError);
+      return {
+        success: false,
+        error: lastError?.message || 'Unknown error'
+      };
+    } finally {
+      // Clean up temp audio file if created
+      if (tempAudioCreated && fs.existsSync(audioPath)) {
+        fs.unlinkSync(audioPath);
+      }
     }
   }
 
   /**
-   * Extract audio from video file
-   * @param {string} videoPath - Path to video file
-   * @param {string} audioPath - Path for output audio file
-   */
-  async extractAudio(videoPath, audioPath) {
-    return new Promise((resolve, reject) => {
-      ffmpeg(videoPath)
-        .outputOptions(['-vn', '-acodec', 'libmp3lame', '-q:a', '2'])
-        .output(audioPath)
-        .on('end', () => resolve())
-        .on('error', (err) => {
-          console.error(`❌ Audio extraction failed:`, err);
-          reject(err);
-        })
-        .run();
-    });
-  }
-
-  /**
-   * Enhanced sentiment analysis with emotional indicators
-   * @param {string} text - Text to analyze
-   * @returns {Promise<Object>} Sentiment analysis result
+   * Analyze sentiment of transcript text with enhanced breakdown
+   * @param {string} text - Transcript text to analyze
+   * @returns {Promise<Object>} Enhanced sentiment analysis result
    */
   async analyzeSentiment(text) {
     try {
-      const prompt = `Analyze the sentiment and emotional indicators in the following text. Return a JSON object with:
-      {
-        "overallSentiment": "positive/negative/neutral",
-        "sentimentScore": -1.0 to 1.0,
-        "confidence": 0.0 to 1.0,
-        "emotionalIndicators": [
-          {
-            "emotion": "joy/sadness/anger/fear/surprise/disgust/trust/anticipation",
-            "intensity": 0.0 to 1.0,
-            "context": "brief description of what triggered this emotion"
+      console.log('🧠 Starting OpenAI enhanced sentiment analysis...');
+      console.log('Sentiment analysis input:', text.slice(0, 200));
+      
+      const prompt = `
+        Analyze the sentiment of the following healthcare meeting transcript with comprehensive detail.
+        
+        Transcript:
+        ${text}
+        
+        Provide a detailed sentiment analysis including:
+        
+        1. Overall sentiment classification (positive, negative, neutral)
+        2. Sentiment score (-1.0 to 1.0, where -1 is very negative, 1 is very positive)
+        3. Detailed breakdown of positive, negative, and neutral percentages
+        4. For each sentiment category, provide specific explanations with supporting evidence from the transcript
+        5. Key emotional indicators and tone markers found in the text
+        6. Confidence level in the analysis
+        7. Sentiment trends throughout the conversation (if applicable)
+        8. Context-specific sentiment factors (e.g., medical concerns, business opportunities, personal rapport)
+        
+        Respond in JSON format:
+        {
+          "overall": "positive|negative|neutral",
+          "score": -1.0 to 1.0,
+          "details": {
+            "positive": 0-100,
+            "negative": 0-100,
+            "neutral": 0-100
+          },
+          "explanations": {
+            "positive": "Detailed explanation of positive elements with specific quotes or examples",
+            "negative": "Detailed explanation of negative elements with specific quotes or examples", 
+            "neutral": "Detailed explanation of neutral elements with specific quotes or examples"
+          },
+          "emotionalIndicators": [
+            {
+              "indicator": "string",
+              "type": "positive|negative|neutral",
+              "context": "string"
+            }
+          ],
+          "confidence": 0.0 to 1.0,
+          "sentimentTrends": [
+            {
+              "segment": "string",
+              "sentiment": "positive|negative|neutral",
+              "reason": "string"
+            }
+          ],
+          "contextFactors": {
+            "medicalConcerns": ["string"],
+            "businessOpportunities": ["string"],
+            "personalRapport": "positive|negative|neutral",
+            "professionalTone": "formal|casual|mixed"
           }
-        ],
-        "keyPhrases": ["phrase1", "phrase2"],
-        "tone": "professional/casual/formal/informal",
-        "summary": "brief summary of the emotional content"
-      }
-
-      Text: ${text.slice(0, 4000)}`;
+        }
+      `;
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 1000
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a healthcare sentiment analysis expert with deep understanding of medical conversations, business relationships, and emotional intelligence. Provide accurate, nuanced, and contextually relevant sentiment analysis for medical meeting transcripts. Focus on both the emotional tone and the professional context of healthcare interactions.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: 1500
       });
 
       const content = response.choices[0].message.content;
+      console.log('Raw OpenAI sentiment response:', content);
+      
+      // Improved JSON extraction and parsing
       let result;
-
       try {
-        result = JSON.parse(content);
+        // First try to find JSON in the response
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No JSON found in OpenAI response');
+        }
+        
+        const jsonString = jsonMatch[0];
+        result = JSON.parse(jsonString);
+        
+        // Validate and clean emotionalIndicators if it's a string
+        if (result.emotionalIndicators && typeof result.emotionalIndicators === 'string') {
+          try {
+            // Try to parse it as JSON if it's a string representation
+            result.emotionalIndicators = JSON.parse(result.emotionalIndicators);
+          } catch (parseError) {
+            console.warn('Failed to parse emotionalIndicators as JSON, setting to empty array:', parseError.message);
+            result.emotionalIndicators = [];
+          }
+        }
+        
+        // Ensure emotionalIndicators is an array
+        if (!Array.isArray(result.emotionalIndicators)) {
+          console.warn('emotionalIndicators is not an array, setting to empty array');
+          result.emotionalIndicators = [];
+        }
+        
+        // Validate each emotional indicator has the required structure
+        result.emotionalIndicators = result.emotionalIndicators.filter(indicator => {
+          return indicator && typeof indicator === 'object' && 
+                 typeof indicator.indicator === 'string' &&
+                 typeof indicator.type === 'string' &&
+                 typeof indicator.context === 'string';
+        });
+        
+        console.log('Extracted sentiment JSON:', result);
+        
       } catch (parseError) {
-        console.warn('Failed to parse emotionalIndicators as JSON, setting to empty array:', parseError.message);
-        result = {
-          overallSentiment: 'neutral',
-          sentimentScore: 0,
-          confidence: 0.5,
-          emotionalIndicators: [],
-          keyPhrases: [],
-          tone: 'neutral',
-          summary: 'Unable to analyze sentiment'
-        };
+        console.error('JSON parsing failed:', parseError);
+        console.error('Raw content:', content);
+        throw new Error(`Failed to parse OpenAI response: ${parseError.message}`);
       }
-
-      // Validate emotionalIndicators
-      if (!Array.isArray(result.emotionalIndicators)) {
-        console.warn('emotionalIndicators is not an array, setting to empty array');
-        result.emotionalIndicators = [];
-      }
-
+      
+      console.log('✅ OpenAI enhanced sentiment analysis completed');
+      
       return {
         success: true,
         ...result
       };
     } catch (error) {
       console.error('❌ OpenAI sentiment analysis failed:', error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Extract key insights and action items
-   * @param {string} text - Text to analyze
-   * @returns {Promise<Object>} Key insights result
+   * Extract comprehensive key insights and action items using OpenAI
+   * @param {string} transcript - Meeting transcript
+   * @param {Array} historicalData - Historical meeting data for context
+   * @param {Array} medicalPublications - Relevant medical publications
+   * @returns {Promise<Object>} Enhanced key insights and action items
    */
-  async extractKeyInsights(text) {
+  async extractKeyInsights(transcript, historicalData = [], medicalPublications = []) {
     try {
-      const prompt = `Extract key insights and action items from the following text. Return a JSON object with:
-      {
-        "keyInsights": [
-          {
-            "insight": "description of the insight",
-            "category": "clinical/business/operational/strategic",
-            "importance": "high/medium/low",
-            "context": "brief context"
-          }
-        ],
-        "actionItems": [
-          {
-            "action": "specific action to take",
-            "priority": "high/medium/low",
-            "assignee": "who should do this",
-            "deadline": "when this should be done",
-            "category": "clinical/business/operational/strategic"
-          }
-        ],
-        "topics": ["topic1", "topic2"],
-        "summary": "brief summary of key points"
-      }
+      console.log('🔍 Starting OpenAI enhanced key insights extraction...');
+      
+      // Build context from historical data
+      const historicalContext = historicalData.length > 0 
+        ? `Historical Context:\n${historicalData.map(item => `- ${item.summary}`).join('\n')}\n\n`
+        : '';
 
-      Text: ${text.slice(0, 4000)}`;
+      // Build medical context
+      const medicalContext = medicalPublications.length > 0
+        ? `Medical Publications Context:\n${medicalPublications.map(pub => `- ${pub.title}: ${pub.summary}`).join('\n')}\n\n`
+        : '';
+
+      const prompt = `
+        Analyze the following healthcare meeting transcript and extract comprehensive insights and actionable items.
+        
+        ${historicalContext}
+        ${medicalContext}
+        
+        Current Meeting Transcript:
+        ${transcript}
+        
+        Please provide a comprehensive analysis including:
+        
+        1. KEY INSIGHTS:
+           - Medical insights (clinical observations, treatment discussions, patient care insights)
+           - Business insights (market opportunities, competitive intelligence, partnership potential)
+           - Strategic insights (long-term implications, trend analysis, future considerations)
+           - Operational insights (process improvements, workflow optimizations, efficiency gains)
+        
+        2. ACTION ITEMS:
+           - High priority items requiring immediate attention
+           - Medium priority items for follow-up
+           - Low priority items for future consideration
+           - Each item should include assignee suggestions and realistic due dates
+        
+        3. FOLLOW-UP RECOMMENDATIONS:
+           - Specific next steps for relationship development
+           - Knowledge gaps that need addressing
+           - Resources or information to provide
+        
+        4. RISK FACTORS:
+           - Potential concerns or red flags
+           - Compliance or regulatory considerations
+           - Competitive threats or market risks
+        
+        5. OPPORTUNITIES:
+           - Collaboration possibilities
+           - Market expansion opportunities
+           - Innovation or research partnerships
+        
+        6. SUMMARY:
+           - Executive summary of key outcomes
+           - Most important takeaway
+           - Strategic implications
+        
+        Respond in JSON format:
+        {
+          "keyInsights": [
+            {
+              "insight": "string",
+              "category": "medical|business|strategic|operational",
+              "confidence": 0.0-1.0,
+              "timestamp": "HH:MM:SS",
+              "impact": "high|medium|low",
+              "context": "string"
+            }
+          ],
+          "actionItems": [
+            {
+              "item": "string",
+              "priority": "high|medium|low",
+              "assignee": "string",
+              "dueDate": "YYYY-MM-DD",
+              "category": "follow-up|research|meeting|documentation",
+              "estimatedEffort": "string",
+              "dependencies": ["string"]
+            }
+          ],
+          "followUpRecommendations": [
+            {
+              "recommendation": "string",
+              "timeline": "string",
+              "priority": "high|medium|low",
+              "type": "relationship|knowledge|resource"
+            }
+          ],
+          "riskFactors": [
+            {
+              "risk": "string",
+              "severity": "high|medium|low",
+              "mitigation": "string",
+              "category": "compliance|competitive|operational"
+            }
+          ],
+          "opportunities": [
+            {
+              "opportunity": "string",
+              "potential": "high|medium|low",
+              "timeline": "string",
+              "category": "collaboration|market|innovation"
+            }
+          ],
+          "summary": {
+            "executiveSummary": "string",
+            "keyTakeaway": "string",
+            "strategicImplications": "string",
+            "nextSteps": "string"
+          }
+        }
+      `;
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a senior healthcare business analyst and strategic advisor with expertise in medical affairs, market access, and healthcare business development. Extract actionable, strategic insights from medical meeting transcripts with high accuracy and business relevance. Focus on both immediate actionable items and long-term strategic implications.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
         temperature: 0.3,
-        max_tokens: 1500
+        max_tokens: 2500
       });
 
       const content = response.choices[0].message.content;
+      console.log('Raw OpenAI key insights response:', content);
+      
+      // Improved JSON extraction and parsing
       let result;
-
       try {
-        result = JSON.parse(content);
+        // First try to find JSON in the response
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No JSON found in OpenAI response');
+        }
+        
+        const jsonString = jsonMatch[0];
+        result = JSON.parse(jsonString);
+        
+        // Ensure keyInsights is an array
+        if (!Array.isArray(result.keyInsights)) {
+          console.warn('keyInsights is not an array, setting to empty array');
+          result.keyInsights = [];
+        }
+        
+        // Validate each key insight has the required structure
+        result.keyInsights = result.keyInsights.filter(insight => {
+          return insight && typeof insight === 'object' && 
+                 typeof insight.insight === 'string';
+        });
+        
+        // Ensure actionItems is an array
+        if (!Array.isArray(result.actionItems)) {
+          console.warn('actionItems is not an array, setting to empty array');
+          result.actionItems = [];
+        }
+        
+        // Validate each action item has the required structure
+        result.actionItems = result.actionItems.filter(item => {
+          return item && typeof item === 'object' && 
+                 typeof item.item === 'string';
+        });
+        
+        console.log('Extracted key insights JSON:', result);
+        
       } catch (parseError) {
         console.error('JSON parsing failed:', parseError);
         console.error('Raw content:', content);
-        result = {
-          keyInsights: [],
-          actionItems: [],
-          topics: [],
-          summary: 'Unable to extract insights'
-        };
+        throw new Error(`Failed to parse OpenAI response: ${parseError.message}`);
       }
-
-      // Validate arrays
-      if (!Array.isArray(result.keyInsights)) {
-        console.warn('keyInsights is not an array, setting to empty array');
-        result.keyInsights = [];
-      }
-
-      if (!Array.isArray(result.actionItems)) {
-        console.warn('actionItems is not an array, setting to empty array');
-        result.actionItems = [];
-      }
-
+      
+      console.log('✅ OpenAI enhanced key insights extraction completed');
+      
       return {
         success: true,
         ...result
       };
     } catch (error) {
       console.error('❌ OpenAI key insights extraction failed:', error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Detailed sentiment breakdown analysis
-   * @param {string} text - Text to analyze
-   * @returns {Promise<Object>} Sentiment breakdown result
+   * Generate comprehensive sentiment breakdown analysis
+   * @param {string} text - Transcript text to analyze
+   * @returns {Promise<Object>} Detailed sentiment breakdown
    */
-  async analyzeSentimentBreakdown(text) {
+  async generateSentimentBreakdown(text) {
     try {
-      const prompt = `Provide a detailed sentiment breakdown analysis of the following text. Return a JSON object with:
-      {
-        "overallSentiment": "positive/negative/neutral",
-        "sentimentScore": -1.0 to 1.0,
-        "confidence": 0.0 to 1.0,
-        "emotionalBreakdown": {
-          "joy": 0.0 to 1.0,
-          "sadness": 0.0 to 1.0,
-          "anger": 0.0 to 1.0,
-          "fear": 0.0 to 1.0,
-          "surprise": 0.0 to 1.0,
-          "disgust": 0.0 to 1.0,
-          "trust": 0.0 to 1.0,
-          "anticipation": 0.0 to 1.0
-        },
-        "toneAnalysis": {
-          "formality": "formal/informal",
-          "professionalism": "high/medium/low",
-          "engagement": "high/medium/low",
-          "clarity": "high/medium/low"
-        },
-        "contextualSentiment": [
-          {
-            "segment": "text segment",
-            "sentiment": "positive/negative/neutral",
-            "emotions": ["emotion1", "emotion2"]
-          }
-        ],
-        "summary": "detailed analysis summary"
-      }
-
-      Text: ${text.slice(0, 4000)}`;
+      console.log('📊 Starting OpenAI sentiment breakdown analysis...');
+      
+      const prompt = `
+        Provide a comprehensive sentiment breakdown analysis for the following healthcare meeting transcript.
+        
+        Transcript:
+        ${text}
+        
+        Analyze the sentiment across different dimensions:
+        
+        1. OVERALL SENTIMENT METRICS:
+           - Primary sentiment classification
+           - Sentiment intensity score
+           - Confidence level
+        
+        2. SENTIMENT BREAKDOWN BY SEGMENTS:
+           - Analyze sentiment changes throughout the conversation
+           - Identify key turning points
+           - Segment by topic or speaker if applicable
+        
+        3. EMOTIONAL DIMENSIONS:
+           - Trust and confidence levels
+           - Engagement and interest
+           - Concern and apprehension
+           - Enthusiasm and optimism
+        
+        4. CONTEXTUAL FACTORS:
+           - Professional vs personal tone
+           - Formal vs informal communication
+           - Collaborative vs adversarial stance
+           - Openness to new ideas or approaches
+        
+        5. SENTIMENT INDICATORS:
+           - Specific phrases or expressions that indicate sentiment
+           - Tone markers and emotional cues
+           - Non-verbal indicators (if mentioned)
+        
+        Respond in JSON format:
+        {
+          "overallMetrics": {
+            "primarySentiment": "positive|negative|neutral",
+            "intensityScore": -1.0 to 1.0,
+            "confidence": 0.0 to 1.0,
+            "sentimentStability": "stable|variable|volatile"
+          },
+          "segmentAnalysis": [
+            {
+              "segment": "string",
+              "sentiment": "positive|negative|neutral",
+              "intensity": -1.0 to 1.0,
+              "keyPhrases": ["string"],
+              "context": "string"
+            }
+          ],
+          "emotionalDimensions": {
+            "trust": {
+              "level": "high|medium|low",
+              "indicators": ["string"],
+              "score": 0.0 to 1.0
+            },
+            "engagement": {
+              "level": "high|medium|low",
+              "indicators": ["string"],
+              "score": 0.0 to 1.0
+            },
+            "concern": {
+              "level": "high|medium|low",
+              "indicators": ["string"],
+              "score": 0.0 to 1.0
+            },
+            "enthusiasm": {
+              "level": "high|medium|low",
+              "indicators": ["string"],
+              "score": 0.0 to 1.0
+            }
+          },
+          "contextualFactors": {
+            "professionalTone": "formal|casual|mixed",
+            "communicationStyle": "collaborative|adversarial|neutral",
+            "opennessToIdeas": "high|medium|low",
+            "relationshipQuality": "strong|developing|strained"
+          },
+          "sentimentIndicators": [
+            {
+              "indicator": "string",
+              "type": "positive|negative|neutral",
+              "context": "string",
+              "confidence": 0.0 to 1.0
+            }
+          ]
+        }
+      `;
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a healthcare communication analyst specializing in sentiment analysis and emotional intelligence. Provide detailed, nuanced breakdowns of sentiment in medical conversations, considering both the emotional and professional context of healthcare interactions.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.2,
         max_tokens: 2000
       });
 
-      const content = response.choices[0].message.content;
-      let result;
-
-      try {
-        result = JSON.parse(content);
-      } catch (parseError) {
-        result = {
-          overallSentiment: 'neutral',
-          sentimentScore: 0,
-          confidence: 0.5,
-          emotionalBreakdown: {},
-          toneAnalysis: {},
-          contextualSentiment: [],
-          summary: 'Unable to analyze sentiment breakdown'
-        };
-      }
-
+      const result = JSON.parse(response.choices[0].message.content);
+      
+      console.log('✅ OpenAI sentiment breakdown analysis completed');
+      
       return {
         success: true,
         ...result
       };
     } catch (error) {
       console.error('❌ OpenAI sentiment breakdown analysis failed:', error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Generate executive summary
-   * @param {string} text - Text to summarize
-   * @returns {Promise<Object>} Executive summary result
+   * Generate executive summary for leadership
+   * @param {Object} transcriptData - Transcript and analysis data
+   * @returns {Promise<Object>} Executive summary
    */
-  async generateExecutiveSummary(text) {
+  async generateExecutiveSummary(transcriptData) {
     try {
-      const prompt = `Generate a professional executive summary of the following text. Return a JSON object with:
-      {
-        "summary": "concise executive summary (2-3 paragraphs)",
-        "keyPoints": ["point1", "point2", "point3"],
-        "recommendations": ["recommendation1", "recommendation2"],
-        "nextSteps": ["step1", "step2"],
-        "riskFactors": ["risk1", "risk2"],
-        "opportunities": ["opportunity1", "opportunity2"]
-      }
-
-      Text: ${text.slice(0, 4000)}`;
+      console.log('📊 Generating OpenAI executive summary...');
+      
+      const prompt = `
+        Create an executive summary for leadership based on the following healthcare meeting data:
+        
+        Meeting Details:
+        - HCP: ${transcriptData.hcpName}
+        - Specialty: ${transcriptData.hcpSpecialty}
+        - Date: ${transcriptData.meetingDate}
+        - Duration: ${transcriptData.meetingDuration} minutes
+        
+        Sentiment Analysis:
+        - Overall: ${transcriptData.sentimentAnalysis.overall}
+        - Score: ${transcriptData.sentimentAnalysis.score}
+        
+        Key Insights: ${transcriptData.keyInsights.map(insight => insight.insight).join(', ')}
+        
+        Action Items: ${transcriptData.actionItems.map(item => item.item).join(', ')}
+        
+        Please provide a concise executive summary suitable for C-level leadership, including:
+        1. Meeting overview and key outcomes
+        2. Sentiment analysis summary
+        3. Critical insights and recommendations
+        4. Next steps and action items
+        5. Risk assessment and opportunities
+        
+        Respond in JSON format:
+        {
+          "executiveSummary": "string",
+          "keyOutcomes": ["string"],
+          "criticalInsights": ["string"],
+          "recommendations": ["string"],
+          "nextSteps": ["string"],
+          "riskAssessment": "string",
+          "opportunities": ["string"]
+        }
+      `;
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an executive communication expert. Create clear, actionable summaries for healthcare leadership.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
         temperature: 0.3,
         max_tokens: 1500
       });
 
-      const content = response.choices[0].message.content;
-      let result;
-
-      try {
-        result = JSON.parse(content);
-      } catch (parseError) {
-        result = {
-          summary: 'Unable to generate executive summary',
-          keyPoints: [],
-          recommendations: [],
-          nextSteps: [],
-          riskFactors: [],
-          opportunities: []
-        };
-      }
-
+      const result = JSON.parse(response.choices[0].message.content);
+      
+      console.log('✅ OpenAI executive summary generated');
+      
       return {
         success: true,
         ...result
       };
     } catch (error) {
       console.error('❌ OpenAI executive summary generation failed:', error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Validate medical terminology
-   * @param {string} text - Text to validate
+   * Validate medical terminology in transcript
+   * @param {string} transcript - Transcript text to validate
    * @returns {Promise<Object>} Medical terminology validation result
    */
-  async validateMedicalTerminology(text) {
+  async validateMedicalTerminology(transcript) {
     try {
-      const prompt = `Validate and correct medical terminology in the following text. Return a JSON object with:
-      {
-        "validatedText": "text with corrected medical terms",
-        "corrections": [
-          {
-            "original": "incorrect term",
-            "corrected": "correct term",
-            "category": "medication/procedure/diagnosis/anatomy",
-            "confidence": 0.0 to 1.0
-          }
-        ],
-        "medicalTerms": ["term1", "term2"],
-        "confidence": 0.0 to 1.0,
-        "summary": "brief summary of corrections made"
-      }
-
-      Text: ${text.slice(0, 4000)}`;
+      console.log('🏥 Validating medical terminology with OpenAI...');
+      
+      const prompt = `
+        Review the following healthcare meeting transcript and identify any potential errors in medical terminology, drug names, or medical procedures.
+        
+        Transcript:
+        ${transcript}
+        
+        Please provide:
+        1. Identified medical terms that may be incorrect
+        2. Suggested corrections
+        3. Confidence level for each correction
+        4. Medical context validation
+        
+        Respond in JSON format:
+        {
+          "medicalTerms": [
+            {
+              "term": "string",
+              "suggestedCorrection": "string",
+              "confidence": 0.0-1.0,
+              "context": "string"
+            }
+          ],
+          "validationScore": 0.0-1.0,
+          "recommendations": ["string"]
+        }
+      `;
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: 2000
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a medical terminology expert. Validate and correct medical terms in healthcare transcripts with high accuracy.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 1000
       });
 
-      const content = response.choices[0].message.content;
-      let result;
-
-      try {
-        result = JSON.parse(content);
-      } catch (parseError) {
-        result = {
-          validatedText: text,
-          corrections: [],
-          medicalTerms: [],
-          confidence: 0.5,
-          summary: 'Unable to validate medical terminology'
-        };
-      }
-
+      const result = JSON.parse(response.choices[0].message.content);
+      
+      console.log('✅ OpenAI medical terminology validation completed');
+      
       return {
         success: true,
         ...result
       };
     } catch (error) {
       console.error('❌ OpenAI medical terminology validation failed:', error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Test OpenAI API connection
-   * @returns {Promise<Object>} Connection test result
+   * Test OpenAI API connectivity
+   * @returns {Promise<Object>} Test result
    */
-  async testConnection() {
+  async testOpenAIConnection() {
     try {
-      if (!process.env.OPENAI_API_KEY) {
-        throw new Error('OpenAI API key not configured');
-      }
-
+      console.log('🧪 Testing OpenAI API connection...');
+      console.log(`🔑 API Key present: ${process.env.OPENAI_API_KEY ? 'Yes' : 'No'}`);
+      
       const response = await this.openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: 'Hello' }],
-        max_tokens: 5
+        messages: [
+          {
+            role: 'user',
+            content: 'Hello, this is a test message.'
+          }
+        ],
+        max_tokens: 10
       });
-
+      
+      console.log('✅ OpenAI API connection test successful');
       return {
         success: true,
-        message: 'OpenAI API connection successful',
-        model: response.model,
-        usage: response.usage
+        message: 'OpenAI API is accessible',
+        response: response.choices[0].message.content
       };
     } catch (error) {
       console.error('❌ OpenAI API connection test failed:', error);
-      throw error;
+      return {
+        success: false,
+        error: error.message,
+        details: {
+          status: error.status,
+          code: error.code,
+          type: error.type
+        }
+      };
     }
   }
 }
