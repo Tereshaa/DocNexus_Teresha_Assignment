@@ -290,15 +290,7 @@ const Upload = () => {
     });
   };
 
-  const resetUpload = () => {
-    setFiles([]);
-    setUploadProgress({});
-    setUploadAttempted(false);
-    setRedirected(false);
-    redirectedRef.current = false;
-    setSuccessMessage('');
-    setUploading(false);
-  };
+
 
   const getStatusIcon = (status) => {
     switch (status) {
@@ -542,15 +534,6 @@ const Upload = () => {
                       >
                         {uploading ? 'Uploading...' : redirected ? 'Processing...' : uploadAttempted ? 'Upload Complete' : 'Upload Files'}
                       </Button>
-                      {(uploadAttempted || redirected) && (
-                        <Button
-                          variant="outlined"
-                          onClick={resetUpload}
-                          disabled={uploading}
-                        >
-                          Start Over
-                        </Button>
-                      )}
                     </Box>
                   )}
                 </Box>
