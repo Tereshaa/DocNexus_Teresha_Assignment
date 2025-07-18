@@ -1,20 +1,16 @@
-const openaiService = require('../services/openaiService');
 const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+const openaiService = require('../services/openaiService');
 const Transcript = require('../models/Transcript');
 
 const router = express.Router();
 
 /**
  * POST /api/ai/transcribe
- * Transcribe audio file
+ * Transcribe audio/video file
  */
 router.post('/transcribe', async (req, res) => {
   try {
-    const { filePath, language = 'en' } = req.body;
+    const { filePath } = req.body;
     
     if (!filePath) {
       return res.status(400).json({
@@ -23,23 +19,12 @@ router.post('/transcribe', async (req, res) => {
       });
     }
 
-    console.log('🎤 Starting transcription request...');
+    const result = await openaiService.transcribeFile(filePath);
     
-    const result = await openaiService.transcribeAudio(filePath, language);
-    
-    if (result.success) {
-      console.log('✅ Transcription completed');
-      res.json({
-        success: true,
-        data: result
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: result.error
-      });
-    }
-
+    res.json({
+      success: true,
+      transcription: result
+    });
   } catch (error) {
     console.error('❌ Transcription request failed:', error);
     res.status(500).json({
@@ -50,10 +35,10 @@ router.post('/transcribe', async (req, res) => {
 });
 
 /**
- * POST /api/ai/analyze-sentiment
+ * POST /api/ai/sentiment
  * Analyze sentiment of text
  */
-router.post('/analyze-sentiment', async (req, res) => {
+router.post('/sentiment', async (req, res) => {
   try {
     const { text } = req.body;
     
@@ -64,23 +49,12 @@ router.post('/analyze-sentiment', async (req, res) => {
       });
     }
 
-    console.log('🧠 Starting sentiment analysis...');
-    
     const result = await openaiService.analyzeSentiment(text);
     
-    if (result.success) {
-      console.log('✅ Sentiment analysis completed');
-      res.json({
-        success: true,
-        data: result
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: result.error
-      });
-    }
-
+    res.json({
+      success: true,
+      sentiment: result
+    });
   } catch (error) {
     console.error('❌ Sentiment analysis failed:', error);
     res.status(500).json({
@@ -91,12 +65,12 @@ router.post('/analyze-sentiment', async (req, res) => {
 });
 
 /**
- * POST /api/ai/extract-insights
+ * POST /api/ai/insights
  * Extract key insights from text
  */
-router.post('/extract-insights', async (req, res) => {
+router.post('/insights', async (req, res) => {
   try {
-    const { text, historicalData = [], medicalPublications = [] } = req.body;
+    const { text } = req.body;
     
     if (!text) {
       return res.status(400).json({
@@ -105,23 +79,12 @@ router.post('/extract-insights', async (req, res) => {
       });
     }
 
-    console.log('🔍 Starting insights extraction...');
+    const result = await openaiService.extractKeyInsights(text);
     
-    const result = await openaiService.extractKeyInsights(text, historicalData, medicalPublications);
-    
-    if (result.success) {
-      console.log('✅ Insights extraction completed');
-      res.json({
-        success: true,
-        data: result
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: result.error
-      });
-    }
-
+    res.json({
+      success: true,
+      insights: result
+    });
   } catch (error) {
     console.error('❌ Insights extraction failed:', error);
     res.status(500).json({
@@ -132,37 +95,26 @@ router.post('/extract-insights', async (req, res) => {
 });
 
 /**
- * POST /api/ai/generate-summary
+ * POST /api/ai/summary
  * Generate executive summary
  */
-router.post('/generate-summary', async (req, res) => {
+router.post('/summary', async (req, res) => {
   try {
-    const { transcriptData } = req.body;
+    const { text } = req.body;
     
-    if (!transcriptData) {
+    if (!text) {
       return res.status(400).json({
         success: false,
-        error: 'Transcript data is required'
+        error: 'Text is required'
       });
     }
 
-    console.log('📊 Generating executive summary...');
+    const result = await openaiService.generateExecutiveSummary(text);
     
-    const result = await openaiService.generateExecutiveSummary(transcriptData);
-    
-    if (result.success) {
-      console.log('✅ Executive summary generated');
-      res.json({
-        success: true,
-        data: result
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: result.error
-      });
-    }
-
+    res.json({
+      success: true,
+      summary: result
+    });
   } catch (error) {
     console.error('❌ Executive summary generation failed:', error);
     res.status(500).json({
@@ -173,37 +125,26 @@ router.post('/generate-summary', async (req, res) => {
 });
 
 /**
- * POST /api/ai/validate-terminology
+ * POST /api/ai/validate-medical
  * Validate medical terminology
  */
-router.post('/validate-terminology', async (req, res) => {
+router.post('/validate-medical', async (req, res) => {
   try {
-    const { transcript } = req.body;
+    const { text } = req.body;
     
-    if (!transcript) {
+    if (!text) {
       return res.status(400).json({
         success: false,
-        error: 'Transcript text is required'
+        error: 'Text is required'
       });
     }
 
-    console.log('🏥 Validating medical terminology...');
+    const result = await openaiService.validateMedicalTerminology(text);
     
-    const result = await openaiService.validateMedicalTerminology(transcript);
-    
-    if (result.success) {
-      console.log('✅ Medical terminology validation completed');
-      res.json({
-        success: true,
-        data: result
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: result.error
-      });
-    }
-
+    res.json({
+      success: true,
+      validation: result
+    });
   } catch (error) {
     console.error('❌ Medical terminology validation failed:', error);
     res.status(500).json({
@@ -215,16 +156,21 @@ router.post('/validate-terminology', async (req, res) => {
 
 /**
  * POST /api/ai/analyze-transcript/:id
- * Analyze specific transcript by ID
+ * Analyze a specific transcript
  */
 router.post('/analyze-transcript/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { includeHistoricalData = false } = req.body;
     
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcript ID is required'
+      });
+    }
+
     // Find transcript
     const transcript = await Transcript.findById(id);
-    
     if (!transcript) {
       return res.status(404).json({
         success: false,
@@ -232,72 +178,41 @@ router.post('/analyze-transcript/:id', async (req, res) => {
       });
     }
 
-    const transcriptText = transcript.editedTranscript || transcript.rawTranscript;
-    
-    if (!transcriptText) {
+    const text = transcript.editedTranscript || transcript.rawTranscript;
+    if (!text) {
       return res.status(400).json({
         success: false,
         error: 'No transcript text available for analysis'
       });
     }
 
-    console.log(`🧠 Analyzing transcript: ${id}`);
-
-    // Get historical data if requested
-    let historicalData = [];
-    if (includeHistoricalData) {
-      const historicalTranscripts = await Transcript.find({
-        hcpName: transcript.hcpName,
-        _id: { $ne: id },
-        transcriptionStatus: 'completed'
-      })
-      .sort({ meetingDate: -1 })
-      .limit(5)
-      .select('keyInsights sentimentAnalysis');
-      
-      historicalData = historicalTranscripts.map(t => ({
-        summary: `Meeting with ${t.hcpName} - Sentiment: ${t.sentimentAnalysis.overall}`,
-        insights: t.keyInsights
-      }));
-    }
-
     // Perform analysis
-    const [sentimentResult, insightsResult] = await Promise.all([
-      openaiService.analyzeSentiment(transcriptText),
-      openaiService.extractKeyInsights(transcriptText, historicalData)
+    const [sentimentResult, insightsResult, summaryResult] = await Promise.all([
+      openaiService.analyzeSentiment(text),
+      openaiService.extractKeyInsights(text),
+      openaiService.generateExecutiveSummary(text)
     ]);
 
-    if (!sentimentResult.success || !insightsResult.success) {
-      throw new Error('Analysis failed');
-    }
+    // Update transcript with analysis results
+    const updateData = {
+      sentimentAnalysis: sentimentResult,
+      keyInsights: insightsResult.keyInsights || [],
+      actionItems: insightsResult.actionItems || [],
+      executiveSummary: summaryResult.summary || summaryResult,
+      analysisStatus: 'completed',
+      lastAnalyzed: new Date()
+    };
 
-    // Update transcript with results
-    const updatedTranscript = await Transcript.findByIdAndUpdate(
-      id,
-      {
-        sentimentAnalysis: {
-          overall: sentimentResult.overall,
-          score: sentimentResult.score,
-          details: sentimentResult.details,
-          explanations: sentimentResult.explanations
-        },
-        keyInsights: insightsResult.keyInsights || [],
-        actionItems: insightsResult.actionItems || []
-      },
-      { new: true }
-    );
-
-    console.log(`✅ Transcript analysis completed: ${id}`);
+    await Transcript.findByIdAndUpdate(id, updateData);
 
     res.json({
       success: true,
-      data: {
-        transcript: updatedTranscript,
+      analysis: {
         sentiment: sentimentResult,
-        insights: insightsResult
+        insights: insightsResult,
+        summary: summaryResult
       }
     });
-
   } catch (error) {
     console.error('❌ Transcript analysis failed:', error);
     res.status(500).json({
@@ -313,7 +228,7 @@ router.post('/analyze-transcript/:id', async (req, res) => {
  */
 router.post('/batch-analyze', async (req, res) => {
   try {
-    const { transcriptIds, includeHistoricalData = false } = req.body;
+    const { transcriptIds } = req.body;
     
     if (!transcriptIds || !Array.isArray(transcriptIds)) {
       return res.status(400).json({
@@ -322,108 +237,66 @@ router.post('/batch-analyze', async (req, res) => {
       });
     }
 
-    console.log(`🧠 Starting batch analysis for ${transcriptIds.length} transcripts`);
-
     const results = [];
     const errors = [];
 
     for (const transcriptId of transcriptIds) {
       try {
-        // Find transcript
         const transcript = await Transcript.findById(transcriptId);
-        
         if (!transcript) {
-          errors.push({
-            transcriptId,
-            error: 'Transcript not found'
-          });
+          errors.push({ transcriptId, error: 'Transcript not found' });
           continue;
         }
 
-        const transcriptText = transcript.editedTranscript || transcript.rawTranscript;
-        
-        if (!transcriptText) {
-          errors.push({
-            transcriptId,
-            error: 'No transcript text available'
-          });
+        const text = transcript.editedTranscript || transcript.rawTranscript;
+        if (!text) {
+          errors.push({ transcriptId, error: 'No transcript text available' });
           continue;
-        }
-
-        // Get historical data if requested
-        let historicalData = [];
-        if (includeHistoricalData) {
-          const historicalTranscripts = await Transcript.find({
-            hcpName: transcript.hcpName,
-            _id: { $ne: transcriptId },
-            transcriptionStatus: 'completed'
-          })
-          .sort({ meetingDate: -1 })
-          .limit(3)
-          .select('keyInsights sentimentAnalysis');
-          
-          historicalData = historicalTranscripts.map(t => ({
-            summary: `Meeting with ${t.hcpName} - Sentiment: ${t.sentimentAnalysis.overall}`,
-            insights: t.keyInsights
-          }));
         }
 
         // Perform analysis
-        const [sentimentResult, insightsResult] = await Promise.all([
-          openaiService.analyzeSentiment(transcriptText),
-          openaiService.extractKeyInsights(transcriptText, historicalData)
+        const [sentimentResult, insightsResult, summaryResult] = await Promise.all([
+          openaiService.analyzeSentiment(text),
+          openaiService.extractKeyInsights(text),
+          openaiService.generateExecutiveSummary(text)
         ]);
 
-        if (sentimentResult.success && insightsResult.success) {
-          // Update transcript
-          await Transcript.findByIdAndUpdate(
-            transcriptId,
-            {
-              sentimentAnalysis: {
-                overall: sentimentResult.overall,
-                score: sentimentResult.score,
-                details: sentimentResult.details,
-                explanations: sentimentResult.explanations
-              },
-              keyInsights: insightsResult.keyInsights || [],
-              actionItems: insightsResult.actionItems || []
-            }
-          );
+        // Update transcript
+        const updateData = {
+          sentimentAnalysis: sentimentResult,
+          keyInsights: insightsResult.keyInsights || [],
+          actionItems: insightsResult.actionItems || [],
+          executiveSummary: summaryResult.summary || summaryResult,
+          analysisStatus: 'completed',
+          lastAnalyzed: new Date()
+        };
 
-          results.push({
-            transcriptId,
-            success: true,
-            sentiment: sentimentResult,
-            insights: insightsResult
-          });
-        } else {
-          errors.push({
-            transcriptId,
-            error: 'Analysis failed'
-          });
-        }
+        await Transcript.findByIdAndUpdate(transcriptId, updateData);
 
-      } catch (error) {
-        errors.push({
+        results.push({
           transcriptId,
-          error: error.message
+          success: true,
+          analysis: {
+            sentiment: sentimentResult,
+            insights: insightsResult,
+            summary: summaryResult
+          }
         });
+      } catch (error) {
+        errors.push({ transcriptId, error: error.message });
       }
     }
 
-    console.log(`✅ Batch analysis completed: ${results.length} successful, ${errors.length} failed`);
-
     res.json({
       success: true,
-      results: results,
-      errors: errors,
+      results,
+      errors,
       summary: {
         total: transcriptIds.length,
         successful: results.length,
         failed: errors.length
       }
     });
-
   } catch (error) {
     console.error('❌ Batch analysis failed:', error);
     res.status(500).json({
@@ -439,31 +312,18 @@ router.post('/batch-analyze', async (req, res) => {
  */
 router.get('/health', async (req, res) => {
   try {
-    // Test OpenAI connection
-    const connectionTest = await openaiService.testOpenAIConnection();
-    
+    const result = await openaiService.testConnection();
     res.json({
       success: true,
-      status: connectionTest.success ? 'healthy' : 'unhealthy',
-      openai: {
-        connected: connectionTest.success,
-        message: connectionTest.message || connectionTest.error,
-        details: connectionTest.details
-      },
-      environment: {
-        apiKeyPresent: !!process.env.OPENAI_API_KEY,
-        nodeEnv: process.env.NODE_ENV
-      },
-      timestamp: new Date().toISOString()
+      status: 'healthy',
+      details: result
     });
-
   } catch (error) {
     console.error('❌ AI health check failed:', error);
     res.status(500).json({
       success: false,
       status: 'unhealthy',
-      error: error.message,
-      timestamp: new Date().toISOString()
+      error: error.message
     });
   }
 });

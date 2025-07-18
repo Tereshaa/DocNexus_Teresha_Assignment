@@ -11,7 +11,6 @@ class CRMService {
    */
   async initializeSalesforce() {
     try {
-      console.log('🔗 Initializing Salesforce connection...');
       this.salesforceConn = new jsforce.Connection({
         loginUrl: process.env.SALESFORCE_LOGIN_URL || 'https://login.salesforce.com'
       });
@@ -19,7 +18,6 @@ class CRMService {
         process.env.SALESFORCE_USERNAME,
         process.env.SALESFORCE_PASSWORD + process.env.SALESFORCE_SECURITY_TOKEN
       );
-      console.log('✅ Salesforce connection established');
       return {
         success: true,
         message: 'Salesforce connection established',
@@ -27,203 +25,202 @@ class CRMService {
       };
     } catch (error) {
       console.error('❌ Salesforce connection failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      throw error;
     }
   }
 
   /**
    * Sync transcript data to Salesforce
-   * @param {Object} transcriptData - Transcript and analysis data
+   * @param {Object} transcriptData - Transcript data to sync
    * @returns {Promise<Object>} Sync result
    */
   async syncToSalesforce(transcriptData) {
     try {
-      console.log('🔄 Syncing to Salesforce...');
-      console.log('📋 Transcript data:', {
-        id: transcriptData._id,
-        hcpName: transcriptData.hcpName,
-        hcpSpecialty: transcriptData.hcpSpecialty,
-        meetingDate: transcriptData.meetingDate,
-        hasTranscript: !!(transcriptData.editedTranscript || transcriptData.rawTranscript),
-        hasInsights: !!(transcriptData.keyInsights && transcriptData.keyInsights.length > 0),
-        hasActionItems: !!(transcriptData.actionItems && transcriptData.actionItems.length > 0)
-      });
-      
       if (!this.salesforceConn) {
-        const initResult = await this.initializeSalesforce();
-        if (!initResult.success) {
-          throw new Error('Failed to initialize Salesforce connection');
-        }
+        await this.initializeSalesforce();
       }
 
-      // Create a Task record (standard Salesforce object) for the meeting
-      const taskRecord = {
-        Subject: `Meeting with ${transcriptData.hcpName}`,
-        Description: `HCP Name: ${transcriptData.hcpName}\nHCP Specialty: ${transcriptData.hcpSpecialty}\nMeeting Date: ${transcriptData.meetingDate}\n\nMeeting Transcript: ${transcriptData.editedTranscript || transcriptData.rawTranscript}\n\nKey Insights: ${transcriptData.keyInsights?.map(insight => insight.insight).join('; ') || 'None'}\nAction Items: ${transcriptData.actionItems?.map(item => item.item).join('; ') || 'None'}\n\nTranscript ID: ${transcriptData._id}`,
-        Status: 'Completed'
+      // Create Task record
+      const taskData = {
+        Subject: `Meeting Summary - ${transcriptData.hcpName || 'Unknown HCP'}`,
+        Description: this.formatTaskDescription(transcriptData),
+        Status: 'Completed',
+        Priority: 'Normal',
+        Type: 'Meeting',
+        ActivityDate: transcriptData.meetingDate ? new Date(transcriptData.meetingDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        WhatId: transcriptData.hcpId || null,
+        WhoId: transcriptData.hcpId || null,
+        Custom_Meeting_Duration__c: transcriptData.meetingDuration || 0,
+        Custom_Sentiment_Score__c: transcriptData.sentimentAnalysis?.sentimentScore || transcriptData.sentimentAnalysis?.score || 0,
+        Custom_Overall_Sentiment__c: transcriptData.sentimentAnalysis?.overallSentiment || transcriptData.sentimentAnalysis?.overall || 'Unknown',
+        Custom_Key_Insights__c: JSON.stringify(transcriptData.keyInsights || []),
+        Custom_Action_Items__c: JSON.stringify(transcriptData.actionItems || []),
+        Custom_Executive_Summary__c: transcriptData.executiveSummary?.summary || transcriptData.executiveSummary || ''
       };
-      
-      // Only add ActivityDate if it's a valid date
-      if (transcriptData.meetingDate && transcriptData.meetingDate !== 'Invalid Date') {
-        taskRecord.ActivityDate = transcriptData.meetingDate;
-      }
 
-      // Try to insert the task
       let result;
       try {
-        result = await this.salesforceConn.sobject('Task').create(taskRecord);
+        result = await this.salesforceConn.sobject('Task').create(taskData);
       } catch (createError) {
         console.warn('❌ Full Task create failed, trying minimal fields:', createError.message);
-        
-        // Fallback: try with only the most basic fields
-        const minimalTaskRecord = {
-          Subject: `Meeting with ${transcriptData.hcpName}`,
-          Description: `Meeting Transcript: ${transcriptData.editedTranscript || transcriptData.rawTranscript}\n\nTranscript ID: ${transcriptData._id}`
+        // Fallback to minimal fields
+        const minimalTaskData = {
+          Subject: `Meeting Summary - ${transcriptData.hcpName || 'Unknown HCP'}`,
+          Description: this.formatTaskDescription(transcriptData),
+          Status: 'Completed',
+          ActivityDate: new Date().toISOString().split('T')[0]
         };
-        
-        result = await this.salesforceConn.sobject('Task').create(minimalTaskRecord);
+        result = await this.salesforceConn.sobject('Task').create(minimalTaskData);
       }
-      
+
       if (result.success) {
-        console.log('✅ Salesforce sync completed');
-        console.log('📋 Created Task record:', {
-          recordId: result.id,
-          subject: taskRecord.Subject,
-          description: taskRecord.Description?.substring(0, 100) + '...',
-          createdDate: new Date().toISOString()
-        });
-        
-        // Verify the record was actually created
+        // Verify the record was created
         try {
-          const verification = await this.salesforceConn.sobject('Task').retrieve(result.id);
-          console.log('✅ Record verification successful:', {
-            id: verification.Id,
-            subject: verification.Subject,
-            status: verification.Status,
-            createdDate: verification.CreatedDate
-          });
+          const verifyResult = await this.salesforceConn.sobject('Task').retrieve(result.id);
+          return {
+            success: true,
+            taskId: result.id,
+            message: 'Task created successfully in Salesforce',
+            taskData: verifyResult
+          };
         } catch (verifyError) {
           console.warn('⚠️ Record verification failed:', verifyError.message);
+          return {
+            success: true,
+            taskId: result.id,
+            message: 'Task created but verification failed',
+            warning: verifyError.message
+          };
         }
-        
-        return {
-          success: true,
-          recordId: result.id,
-          message: 'Data synced to Salesforce successfully',
-          details: {
-            subject: taskRecord.Subject,
-            createdDate: new Date().toISOString()
-          }
-        };
       } else {
         console.error('❌ Salesforce create failed:', result.errors);
-        throw new Error(`Salesforce error: ${result.errors.join(', ')}`);
+        throw new Error(`Salesforce create failed: ${JSON.stringify(result.errors)}`);
       }
     } catch (error) {
       console.error('❌ Salesforce sync failed:', error);
-      return {
-        success: false,
-        error: error.message || 'Unknown Salesforce error'
-      };
+      throw error;
     }
   }
 
   /**
-   * Sync to CRM (Salesforce only)
-   * @param {Object} transcriptData - Transcript and analysis data
-   * @returns {Promise<Object>} Sync result
+   * Search for HCP in Salesforce
+   * @param {string} hcpName - HCP name to search
+   * @returns {Promise<Object>} Search result
    */
-  async syncToCRM(transcriptData) {
-    return this.syncToSalesforce(transcriptData);
-  }
-
-  /**
-   * Get HCP information from Salesforce
-   * @param {string} hcpName - HCP name to search for
-   * @returns {Promise<Object>} HCP data
-   */
-  async getHCPFromSalesforce(hcpName) {
+  async searchHCP(hcpName) {
     try {
-      console.log(`🔍 Searching for HCP in Salesforce: ${hcpName}`);
       if (!this.salesforceConn) {
-        const initResult = await this.initializeSalesforce();
-        if (!initResult.success) {
-          throw new Error('Failed to initialize Salesforce connection');
-        }
+        await this.initializeSalesforce();
       }
+
       const query = `
-        SELECT Id, Name, Specialty__c, Email__c, Phone__c, Organization__c
-        FROM HCP__c
+        SELECT Id, Name, Title, Department, Email, Phone, Account.Name, Account.Industry
+        FROM Contact
         WHERE Name LIKE '%${hcpName}%'
-        LIMIT 1
+        OR Account.Name LIKE '%${hcpName}%'
+        LIMIT 10
       `;
+
       const result = await this.salesforceConn.query(query);
+      
       if (result.records.length > 0) {
-        console.log('✅ HCP found in Salesforce');
         return {
           success: true,
-          hcp: result.records[0]
+          hcps: result.records,
+          totalSize: result.totalSize
         };
       } else {
-        console.log('⚠️ HCP not found in Salesforce');
         return {
-          success: false,
-          message: 'HCP not found'
+          success: true,
+          hcps: [],
+          totalSize: 0,
+          message: 'No HCPs found'
         };
       }
     } catch (error) {
       console.error('❌ Salesforce HCP search failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      throw error;
     }
   }
 
   /**
-   * Get sync status for a transcript (Salesforce only)
+   * Get sync status for a transcript
    * @param {string} transcriptId - Transcript ID
-   * @returns {Promise<Object>} Sync status
+   * @returns {Promise<Object>} Status result
    */
   async getSyncStatus(transcriptId) {
     try {
-      console.log(`📊 Getting sync status for transcript: ${transcriptId}`);
-      let status = { salesforce: { synced: false, recordId: null, lastSync: null } };
-      if (this.salesforceConn) {
-        try {
-          const query = `
-            SELECT Id, LastModifiedDate
-            FROM Task
-            WHERE Description LIKE '%Transcript ID: ${transcriptId}%'
-            LIMIT 1
-          `;
-          const result = await this.salesforceConn.query(query);
-          if (result.records.length > 0) {
-            status.salesforce = {
-              synced: true,
-              recordId: result.records[0].Id,
-              lastSync: result.records[0].LastModifiedDate
-            };
-          }
-        } catch (error) {
-          console.error('Salesforce status check failed:', error);
-        }
+      if (!this.salesforceConn) {
+        await this.initializeSalesforce();
       }
-      return {
-        success: true,
-        status: status
-      };
+
+      const query = `
+        SELECT Id, Subject, Status, CreatedDate, Custom_Meeting_Duration__c, Custom_Sentiment_Score__c
+        FROM Task
+        WHERE Subject LIKE '%${transcriptId}%'
+        OR Description LIKE '%${transcriptId}%'
+        ORDER BY CreatedDate DESC
+        LIMIT 1
+      `;
+
+      const result = await this.salesforceConn.query(query);
+      
+      if (result.records.length > 0) {
+        const task = result.records[0];
+        return {
+          success: true,
+          synced: true,
+          taskId: task.Id,
+          subject: task.Subject,
+          status: task.Status,
+          createdDate: task.CreatedDate,
+          meetingDuration: task.Custom_Meeting_Duration__c,
+          sentimentScore: task.Custom_Sentiment_Score__c
+        };
+      } else {
+        return {
+          success: true,
+          synced: false,
+          message: 'No sync record found'
+        };
+      }
     } catch (error) {
-      console.error('❌ Sync status check failed:', error);
-      return { 
-        success: false,
-        error: error.message,
-        status: { salesforce: { synced: false, error: error.message } }
-      };
+      console.error('Salesforce status check failed:', error);
+      throw error;
     }
+  }
+
+  /**
+   * Format task description for Salesforce
+   * @param {Object} transcriptData - Transcript data
+   * @returns {string} Formatted description
+   */
+  formatTaskDescription(transcriptData) {
+    const parts = [];
+    
+    parts.push(`Meeting with: ${transcriptData.hcpName || 'Unknown HCP'}`);
+    parts.push(`Date: ${transcriptData.meetingDate || 'Unknown'}`);
+    parts.push(`Duration: ${transcriptData.meetingDuration || 0} minutes`);
+    
+    if (transcriptData.sentimentAnalysis) {
+      const sentiment = transcriptData.sentimentAnalysis;
+      parts.push(`Sentiment: ${sentiment.overallSentiment || sentiment.overall || 'Unknown'} (Score: ${sentiment.sentimentScore || sentiment.score || 'N/A'})`);
+    }
+    
+    if (transcriptData.keyInsights && transcriptData.keyInsights.length > 0) {
+      parts.push(`Key Insights: ${transcriptData.keyInsights.length} identified`);
+    }
+    
+    if (transcriptData.actionItems && transcriptData.actionItems.length > 0) {
+      parts.push(`Action Items: ${transcriptData.actionItems.length} identified`);
+    }
+    
+    if (transcriptData.executiveSummary) {
+      const summary = transcriptData.executiveSummary.summary || transcriptData.executiveSummary;
+      parts.push(`Executive Summary: ${summary.substring(0, 200)}${summary.length > 200 ? '...' : ''}`);
+    }
+    
+    return parts.join('\n');
   }
 }
 
