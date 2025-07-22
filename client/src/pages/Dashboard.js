@@ -29,6 +29,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { formatDateIST } from '../utils/dateUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -184,7 +185,7 @@ const Dashboard = () => {
                         primary={
                           activity.originalFileName
                             || (activity.hcpName && activity.meetingDate
-                                  ? `${activity.hcpName} (${new Date(activity.meetingDate).toLocaleDateString()})`
+                                  ? `${activity.hcpName} (${formatDateIST(activity.meetingDate)})`
                                   : 'Untitled Transcript')
                         }
                         secondary={
@@ -194,7 +195,7 @@ const Dashboard = () => {
                             </Typography>
                             <CalendarToday sx={{ fontSize: 16, color: 'text.secondary', ml: 0.5, mr: 0.5 }} />
                             <Typography variant="body2" color="text.secondary">
-                              {new Date(activity.createdAt).toLocaleDateString()}
+                              {formatDateIST(activity.createdAt)}
                             </Typography>
                           </Box>
                         }

@@ -39,6 +39,7 @@ import {
 } from '@mui/icons-material';
 import { IconButton, List, ListItem, ListItemText } from '@mui/material';
 import api from '../services/api';
+import { formatDateIST } from '../utils/dateUtils';
 
 const CRM = () => {
   const [crmData, setCrmData] = useState(null);
@@ -275,7 +276,7 @@ const CRM = () => {
               </Typography>
               <Typography variant="h4">
                 {crmData?.syncStats?.lastSync 
-                  ? new Date(crmData.syncStats.lastSync).toLocaleDateString()
+                  ? formatDateIST(crmData.syncStats.lastSync)
                   : 'Never'
                 }
               </Typography>
@@ -330,7 +331,7 @@ const CRM = () => {
                       </TableCell>
                       <TableCell>
                         {item.lastSync 
-                          ? new Date(item.lastSync).toLocaleDateString()
+                          ? formatDateIST(item.lastSync)
                           : 'Never'
                         }
                       </TableCell>
@@ -378,7 +379,7 @@ const CRM = () => {
                       <TableCell>{hcp.crmId || 'Not synced'}</TableCell>
                       <TableCell>
                         {hcp.lastMeeting 
-                          ? new Date(hcp.lastMeeting).toLocaleDateString()
+                          ? formatDateIST(hcp.lastMeeting)
                           : 'Never'
                         }
                       </TableCell>

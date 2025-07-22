@@ -35,6 +35,7 @@ import {
   Description,
 } from '@mui/icons-material';
 import api from '../services/api';
+import { formatDateIST } from '../utils/dateUtils';
 
 const Analytics = () => {
   const [analytics, setAnalytics] = useState(null);
@@ -350,7 +351,7 @@ const Analytics = () => {
                       />
                     </TableCell>
                     <TableCell>
-                      {hcp.lastMeeting ? new Date(hcp.lastMeeting).toLocaleDateString() : 'N/A'}
+                      {hcp.lastMeeting ? formatDateIST(hcp.lastMeeting) : 'N/A'}
                     </TableCell>
                   </TableRow>
                 ))}

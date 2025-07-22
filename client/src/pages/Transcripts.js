@@ -53,6 +53,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import GenerateDocumentDialog from '../components/GenerateDocumentDialog';
+import { formatDateIST } from '../utils/dateUtils';
 
 const Transcripts = () => {
   const navigate = useNavigate();
@@ -287,7 +288,7 @@ const Transcripts = () => {
                     {transcript.originalFileName || 'Untitled'}
                   </Typography>
                   <Typography variant="caption" color="textSecondary">
-                    {new Date(transcript.createdAt).toLocaleDateString()}
+                    {formatDateIST(transcript.createdAt)}
                   </Typography>
                 </TableCell>
                 <TableCell>
@@ -304,7 +305,7 @@ const Transcripts = () => {
                 </TableCell>
                 <TableCell>
                   {transcript.meetingDate 
-                    ? new Date(transcript.meetingDate).toLocaleDateString()
+                    ? formatDateIST(transcript.meetingDate)
                     : 'Not specified'
                   }
                 </TableCell>

@@ -46,6 +46,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import Tooltip from '@mui/material/Tooltip';
+import { formatDateIST } from '../utils/dateUtils';
 
 const Documents = () => {
   const [searchParams] = useSearchParams();
@@ -364,10 +365,10 @@ const Documents = () => {
                       </TableCell>
                       <TableCell>
                         {group.hcpName ? `HCP: ${group.hcpName}` : ''}
-                        {group.meetingDate ? ` | Date: ${new Date(group.meetingDate).toLocaleDateString()}` : ''}
+                        {group.meetingDate ? ` | Date: ${formatDateIST(group.meetingDate)}` : ''}
                       </TableCell>
                       <TableCell>
-                        {group.generatedAt ? new Date(group.generatedAt).toLocaleDateString() : ''}
+                        {group.generatedAt ? formatDateIST(group.generatedAt) : ''}
                       </TableCell>
                       <TableCell>
                         <Tooltip title="Delete">

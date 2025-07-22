@@ -42,6 +42,7 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import GenerateDocumentDialog from '../components/GenerateDocumentDialog';
+import { formatDateIST } from '../utils/dateUtils';
 
 const TranscriptDetail = () => {
   const { id } = useParams();
@@ -370,7 +371,7 @@ const TranscriptDetail = () => {
             {transcript.originalFileName || 'Untitled Transcript'}
           </Typography>
           <Typography variant="body1" color="textSecondary">
-            {transcript.hcpName} • {transcript.hcpSpecialty} • {new Date(transcript.createdAt).toLocaleDateString()}
+            {transcript.hcpName} • {transcript.hcpSpecialty} • {formatDateIST(transcript.createdAt)}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -442,7 +443,7 @@ const TranscriptDetail = () => {
               </Box>
               <Typography variant="body1" sx={{ mt: 1 }}>
                 {transcript.meetingDate 
-                  ? new Date(transcript.meetingDate).toLocaleDateString()
+                  ? formatDateIST(transcript.meetingDate)
                   : 'Not specified'
                 }
               </Typography>
